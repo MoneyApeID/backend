@@ -10,6 +10,7 @@ import (
 	"project/models"
 	"project/utils"
 	"strconv"
+	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -54,8 +55,33 @@ func WithdrawalHandler(w http.ResponseWriter, r *http.Request) {
 		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: fmt.Sprintf("Maksimal penarikan adalah Rp%.0f", setting.MaxWithdraw)})
 		return
 	}
+	loc, _ := time.LoadLocation("Asia/Jakarta")
+	now := time.Now().In(loc)
+	hour := now.Hour()
+	if hour < 12 || hour >= 17 {
+		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "Penarikan hanya dapat dilakukan pada pukul 12:00 - 17:00 WIB"})
+		return
+	}
+
+	if now.Weekday() == time.Sunday {
+		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "Penarikan hanya dapat dilakukan pada hari Senin sampai Sabtu"})
+		return
+	}
 
 	db := database.DB
+
+	// Check if user has already made a withdrawal today
+	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+	endOfDay := startOfDay.Add(24 * time.Hour)
+	var todayWithdrawals int64
+	if err := db.Model(&models.Withdrawal{}).Where("user_id = ? AND created_at BETWEEN ? AND ?", uid, startOfDay, endOfDay).Count(&todayWithdrawals).Error; err != nil {
+		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "Terjadi kesalahan sistem, silakan coba lagi"})
+		return
+	}
+	if todayWithdrawals > 0 {
+		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "Anda hanya dapat melakukan 1 kali penarikan dalam sehari"})
+		return
+	}
 
 	// Load bank account owned by user
 	var acc models.BankAccount
