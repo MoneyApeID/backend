@@ -1,13 +1,9 @@
 package users
 
 import (
-	"bytes"
-	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"strconv"
@@ -22,46 +18,11 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-type KytaAccessTokenResponse struct {
-	ResponseCode    string `json:"response_code"`
-	ResponseMessage string `json:"response_message"`
-	ResponseData    struct {
-		AccessToken string `json:"access_token"`
-		TokenType   string `json:"token_type"`
-		ExpiresIn   int    `json:"expires_in"`
-		RequestTime string `json:"request_time"`
-	} `json:"response_data"`
-}
-
-type KytaPaymentResponse struct {
-	ResponseCode    string `json:"response_code"`
-	ResponseMessage string `json:"response_message"`
-	ResponseData    struct {
-		ID          string `json:"id"`
-		ReferenceID string `json:"reference_id"`
-		Amount      int64  `json:"amount"`
-		PaymentData struct {
-			QRString      string `json:"qr_string,omitempty"`
-			BankCode      string `json:"bank_code,omitempty"`
-			AccountNumber string `json:"account_number,omitempty"`
-			AccountName   string `json:"account_name,omitempty"`
-		} `json:"payment_data"`
-		MerchantURL struct {
-			NotifyURL  string `json:"notify_url"`
-			SuccessURL string `json:"success_url"`
-			FailedURL  string `json:"failed_url"`
-		} `json:"merchant_url"`
-		CheckoutURL string `json:"checkout_url"`
-		ExpiresAt   string `json:"expires_at"`
-		RequestTime string `json:"request_time"`
-	} `json:"response_data"`
-}
-
 type CreateInvestmentRequest struct {
-	ProductID      uint   `json:"product_id"`
-	PaymentMethod  string `json:"payment_method"`
-	PaymentChannel string `json:"payment_channel"`
+	ProductID uint `json:"product_id"`
 }
+
+var errInsufficientBalance = errors.New("saldo tidak mencukupi")
 
 // GET /api/users/investment/active
 func GetActiveInvestmentsHandler(w http.ResponseWriter, r *http.Request) {
@@ -157,20 +118,6 @@ func CreateInvestmentHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	method := strings.ToUpper(strings.TrimSpace(req.PaymentMethod))
-	channel := strings.ToUpper(strings.TrimSpace(req.PaymentChannel))
-	if method != "QRIS" && method != "BANK" {
-		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "Silahkan pilih metode pembayaran"})
-		return
-	}
-	if method == "BANK" {
-		allowed := map[string]struct{}{"BCA": {}, "BRI": {}, "BNI": {}, "MANDIRI": {}, "PERMATA": {}, "BNC": {}}
-		if _, ok := allowed[channel]; !ok {
-			utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "Bank tidak valid"})
-			return
-		}
-	}
-
 	db := database.DB
 	var product models.Product
 	if err := db.Preload("Category").Where("id = ? AND status = 'Active'", req.ProductID).First(&product).Error; err != nil {
@@ -188,7 +135,7 @@ func CreateInvestmentHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var user models.User
-	if err := db.Select("level").Where("id = ?", uid).First(&user).Error; err != nil {
+	if err := db.Where("id = ?", uid).First(&user).Error; err != nil {
 		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "Terjadi kesalahan, coba lagi"})
 		return
 	}
@@ -219,158 +166,134 @@ func CreateInvestmentHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	kytapayBase := os.Getenv("KYTAPAY_BASE_URL")
-	if kytapayBase == "" {
-		kytapayBase = "https://api.kytapay.com/v2"
-	}
-	kytapayClientID := os.Getenv("KYTAPAY_CLIENT_ID")
-	kytapayClientSecret := os.Getenv("KYTAPAY_CLIENT_SECRET")
-	notifyURL := os.Getenv("NOTIFY_URL")
-	successURL := os.Getenv("SUCCESS_URL")
-	failedURL := os.Getenv("FAILED_URL")
-
-	if kytapayClientID == "" || kytapayClientSecret == "" {
-		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "Server error"})
-		return
-	}
-
-	httpClient := &http.Client{Timeout: 30 * time.Second}
 	orderID := utils.GenerateOrderID(uid)
-	referenceID := orderID
-
-	accessToken, _, err := getKytaAccessTokenSafe(r.Context(), httpClient, kytapayBase, kytapayClientID, kytapayClientSecret)
-	if err != nil {
-		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "Terjadi kesalahan saat memanggil layanan pembayaran"})
-		return
-	}
-
-	amount := product.Amount
-
-	if method == "QRIS" && amount > 10000000 {
-		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "Jumlah pembayaran maksimal menggunakan QRIS adalah Rp 10.000.000, Silahkan gunakan metode pembayaran lain"})
-		return
-	}
-
-	if method == "BANK" && amount < 10000 {
-		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "Jumlah pembayaran minimal menggunakan BANK adalah Rp 10.000, Silahkan gunakan metode pembayaran lain"})
-		return
-	}
-
-	var payResp *KytaPaymentResponse
-	if method == "QRIS" {
-		payResp, _, err = createKytaQRISSafe(r.Context(), httpClient, kytapayBase, accessToken, referenceID, int64(amount), notifyURL, successURL, failedURL)
-	} else {
-		payResp, _, err = createKytaVASafe(r.Context(), httpClient, kytapayBase, accessToken, referenceID, int64(amount), channel, notifyURL, successURL, failedURL)
-	}
-
-	if err != nil {
-		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "Terjadi kesalahan saat memanggil layanan pembayaran"})
-		return
-	}
-	if payResp == nil {
-		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "Gagal mendapatkan jawaban dari layanan pembayaran"})
-		return
-	}
-
-	daily := product.DailyProfit
+	now := time.Now()
+	nextReturn := now.Add(24 * time.Hour)
 
 	inv := models.Investment{
 		UserID:        uid,
 		ProductID:     product.ID,
 		CategoryID:    product.CategoryID,
-		Amount:        amount,
-		DailyProfit:   daily,
+		Amount:        product.Amount,
+		DailyProfit:   product.DailyProfit,
 		Duration:      product.Duration,
 		TotalPaid:     0,
 		TotalReturned: 0,
 		OrderID:       orderID,
-		Status:        "Pending",
+		Status:        "Running",
+		NextReturnAt:  &nextReturn,
 	}
 
+	var finalBalance float64
+
 	if err := db.Transaction(func(tx *gorm.DB) error {
+		var userForUpdate models.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", uid).First(&userForUpdate).Error; err != nil {
+			return err
+		}
+
+		if userForUpdate.Balance < product.Amount {
+			return errInsufficientBalance
+		}
+
 		if err := tx.Create(&inv).Error; err != nil {
 			return err
 		}
 
-		var paymentCode *string
-		var expiredAt *time.Time
-
-		methodToSave := strings.ToUpper(method)
-
-		if method == "QRIS" {
-			if qr := strings.TrimSpace(payResp.ResponseData.PaymentData.QRString); qr != "" {
-				paymentCode = &qr
-			}
-		} else {
-			if accNum := strings.TrimSpace(payResp.ResponseData.PaymentData.AccountNumber); accNum != "" {
-				paymentCode = &accNum
-			}
+		isLockedCategory := false
+		if product.Category != nil && strings.EqualFold(product.Category.ProfitType, "locked") {
+			isLockedCategory = true
 		}
 
-		if expiredStr := strings.TrimSpace(payResp.ResponseData.ExpiresAt); expiredStr != "" {
-			if t, err := parseTimeFlexible(expiredStr); err == nil {
-				tt := t.UTC()
-				expiredAt = &tt
-			} else {
-				t := time.Now().Add(15 * time.Minute)
-				expiredAt = &t
-			}
-		} else {
-			t := time.Now().Add(15 * time.Minute)
-			expiredAt = &t
+        newBalance := round3(userForUpdate.Balance - product.Amount)
+		finalBalance = newBalance
+		newTotalInvest := round3(userForUpdate.TotalInvest + product.Amount)
+		newTotalInvestVIP := userForUpdate.TotalInvestVIP
+		updateFields := map[string]interface{}{
+			"balance":            newBalance,
+			"total_invest":       newTotalInvest,
+			"investment_status":  "Active",
+			"updated_at":         time.Now(),
 		}
 
-		payment := models.Payment{
-			InvestmentID: inv.ID,
-			ReferenceID: func() *string {
-				x := referenceID
-				return &x
-			}(),
-			OrderID:       inv.OrderID,
-			PaymentMethod: &methodToSave,
-			PaymentChannel: func() *string {
-				if methodToSave == "BANK" {
-					return &channel
-				}
-				return nil
-			}(),
-			PaymentCode: paymentCode,
-			PaymentLink: func() *string {
-				if url := strings.TrimSpace(payResp.ResponseData.CheckoutURL); url != "" {
-					return &url
-				}
-				return nil
-			}(),
-			Status:    "Pending",
-			ExpiredAt: expiredAt,
+		if isLockedCategory {
+			newTotalInvestVIP = round3(userForUpdate.TotalInvestVIP + product.Amount)
+			updateFields["total_invest_vip"] = newTotalInvestVIP
 		}
 
-		if err := tx.Create(&payment).Error; err != nil {
+		if err := tx.Model(&models.User{}).Where("id = ?", uid).Updates(updateFields).Error; err != nil {
 			return err
 		}
 
-		if paymentCode != nil && *paymentCode != "" {
-			if err := tx.Model(&models.Payment{}).Where("id = ?", payment.ID).Update("payment_code", *paymentCode).Error; err != nil {
-				return err
+		// Update VIP level if needed for locked category
+		if isLockedCategory {
+			newLevel := calculateVIPLevel(newTotalInvestVIP)
+			if userForUpdate.Level == nil || *userForUpdate.Level != newLevel {
+				if err := tx.Model(&models.User{}).Where("id = ?", uid).Update("level", newLevel).Error; err != nil {
+					return err
+				}
 			}
 		}
 
 		msg := fmt.Sprintf("Investasi %s", product.Name)
 		trx := models.Transaction{
 			UserID:          uid,
-			Amount:          inv.Amount,
+			Amount:          product.Amount,
 			Charge:          0,
-			OrderID:         inv.OrderID,
+			OrderID:         orderID,
 			TransactionFlow: "credit",
 			TransactionType: "investment",
 			Message:         &msg,
-			Status:          "Pending",
+			Status:          "Success",
 		}
 		if err := tx.Create(&trx).Error; err != nil {
 			return err
 		}
+
+		// Handle referral bonus (level 1)
+		if userForUpdate.ReffBy != nil {
+			var refUser models.User
+			if err := tx.Select("id, spin_ticket, balance").Where("id = ?", *userForUpdate.ReffBy).First(&refUser).Error; err == nil {
+				if product.Amount >= 100000 {
+					if refUser.SpinTicket == nil {
+						one := uint(1)
+						if err := tx.Model(&models.User{}).Where("id = ?", refUser.ID).Update("spin_ticket", one).Error; err != nil {
+							return err
+						}
+					} else {
+						if err := tx.Model(&models.User{}).Where("id = ?", refUser.ID).UpdateColumn("spin_ticket", gorm.Expr("spin_ticket + ?", 1)).Error; err != nil {
+							return err
+						}
+					}
+				}
+
+				bonus := round3(product.Amount * 0.30)
+				if err := tx.Model(&models.User{}).Where("id = ?", refUser.ID).UpdateColumn("balance", gorm.Expr("balance + ?", bonus)).Error; err != nil {
+					return err
+				}
+				msgBonus := "Bonus rekomendasi investor"
+				refTrx := models.Transaction{
+					UserID:          refUser.ID,
+					Amount:          bonus,
+					Charge:          0,
+					OrderID:         utils.GenerateOrderID(refUser.ID),
+					TransactionFlow: "debit",
+					TransactionType: "team",
+					Message:         &msgBonus,
+					Status:          "Success",
+				}
+				if err := tx.Create(&refTrx).Error; err != nil {
+					return err
+				}
+			}
+		}
+
 		return nil
 	}); err != nil {
+		if errors.Is(err, errInsufficientBalance) {
+			utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "Saldo tidak mencukupi"})
+			return
+		}
 		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "Gagal membuat investasi"})
 		return
 	}
@@ -382,10 +305,17 @@ func CreateInvestmentHandler(w http.ResponseWriter, r *http.Request) {
 		"category":     product.Category.Name,
 		"category_id":  product.CategoryID,
 		"duration":     product.Duration,
-		"daily_profit": daily,
+		"daily_profit": product.DailyProfit,
 		"status":       inv.Status,
+		"next_return": func() interface{} {
+			if inv.NextReturnAt == nil {
+				return nil
+			}
+			return inv.NextReturnAt.Format(time.RFC3339)
+		}(),
+		"balance": round3(finalBalance),
 	}
-	utils.WriteJSON(w, http.StatusCreated, utils.APIResponse{Success: true, Message: "Pembelian berhasil, silakan lakukan pembayaran", Data: resp})
+	utils.WriteJSON(w, http.StatusCreated, utils.APIResponse{Success: true, Message: "Investasi berhasil menggunakan saldo", Data: resp})
 }
 
 // GET /api/users/investments
@@ -444,233 +374,6 @@ func GetInvestmentHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	utils.WriteJSON(w, http.StatusOK, utils.APIResponse{Success: true, Message: "Successfully", Data: row})
-}
-
-// GET /api/users/payment/{order_id}
-func GetPaymentDetailsHandler(w http.ResponseWriter, r *http.Request) {
-	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-	var orderID string
-	if len(parts) >= 3 {
-		orderID = parts[len(parts)-1]
-	}
-
-	db := database.DB
-	var payment models.Payment
-	if err := db.Where("order_id = ?", orderID).First(&payment).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			utils.WriteJSON(w, http.StatusNotFound, utils.APIResponse{Success: false, Message: "Data pembayaran tidak ditemukan"})
-			return
-		}
-		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "Terjadi kesalahan"})
-		return
-	}
-
-	var inv models.Investment
-	if err := db.Where("id = ?", payment.InvestmentID).First(&inv).Error; err != nil {
-		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "Terjadi kesalahan mengambil data investasi"})
-		return
-	}
-	var product models.Product
-	if err := db.Select("name").Where("id = ?", inv.ProductID).First(&product).Error; err != nil {
-		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "Terjadi kesalahan mengambil data produk"})
-		return
-	}
-	resp := map[string]interface{}{
-		"product":  product.Name,
-		"order_id": payment.OrderID,
-		"amount":   inv.Amount,
-		"payment_code": func() interface{} {
-			if payment.PaymentCode == nil {
-				return nil
-			}
-			return *payment.PaymentCode
-		}(),
-		"payment_channel": func() interface{} {
-			if payment.PaymentChannel == nil {
-				return nil
-			}
-			return *payment.PaymentChannel
-		}(),
-		"payment_method": func() interface{} {
-			if payment.PaymentMethod == nil {
-				return nil
-			}
-			return *payment.PaymentMethod
-		}(),
-		"expired_at": func() interface{} {
-			if payment.ExpiredAt == nil {
-				return nil
-			}
-			return payment.ExpiredAt.UTC().Format(time.RFC3339)
-		}(),
-		"status": payment.Status,
-	}
-
-	utils.WriteJSON(w, http.StatusOK, utils.APIResponse{Success: true, Message: "Successfully", Data: resp})
-}
-
-// POST /api/payments/kyta/webhook
-func KytaWebhookHandler(w http.ResponseWriter, r *http.Request) {
-	var payload struct {
-		CallbackCode    string `json:"callback_code"`
-		CallbackMessage string `json:"callback_message"`
-		CallbackData    struct {
-			ID          string `json:"id"`
-			ReferenceID string `json:"reference_id"`
-			Amount      string `json:"amount"`
-			Status      string `json:"status"`
-			PaymentType string `json:"payment_type"`
-			PaymentData struct {
-				QRString      string `json:"qr_string,omitempty"`
-				BankCode      string `json:"bank_code,omitempty"`
-				AccountNumber string `json:"account_number,omitempty"`
-				AccountName   string `json:"account_name,omitempty"`
-			} `json:"payment_data"`
-			MerchantURL struct {
-				NotifyURL  string `json:"notify_url"`
-				SuccessURL string `json:"success_url"`
-				FailedURL  string `json:"failed_url"`
-			} `json:"merchant_url"`
-			CallbackTime string `json:"callback_time"`
-		} `json:"callback_data"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "Invalid JSON"})
-		return
-	}
-
-	referenceID := strings.TrimSpace(payload.CallbackData.ReferenceID)
-	status := strings.ToUpper(strings.TrimSpace(payload.CallbackData.Status))
-	paymentID := strings.TrimSpace(payload.CallbackData.ID)
-
-	if referenceID == "" {
-		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "reference_id kosong"})
-		return
-	}
-
-	success := status == "SUCCESS" || status == "PAID" || status == "COMPLETED"
-
-	db := database.DB
-
-	var payment models.Payment
-	if err := db.Where("order_id = ?", referenceID).First(&payment).Error; err != nil {
-		utils.WriteJSON(w, http.StatusNotFound, utils.APIResponse{Success: false, Message: "Pembayaran tidak ditemukan"})
-		return
-	}
-
-	paymentUpdates := map[string]interface{}{}
-	if paymentID != "" {
-		paymentUpdates["reference_id"] = paymentID
-	}
-	if success {
-		paymentUpdates["status"] = "Success"
-	} else {
-		paymentUpdates["status"] = "Failed"
-	}
-	if len(paymentUpdates) > 0 {
-		_ = db.Model(&payment).Updates(paymentUpdates).Error
-	}
-
-	var inv models.Investment
-	if err := db.Where("id = ?", payment.InvestmentID).First(&inv).Error; err != nil {
-		utils.WriteJSON(w, http.StatusNotFound, utils.APIResponse{Success: false, Message: "Investasi tidak ditemukan"})
-		return
-	}
-
-	if inv.Status != "Pending" {
-		utils.WriteJSON(w, http.StatusOK, utils.APIResponse{Success: true, Message: "Ignored"})
-		return
-	}
-
-	if success {
-		now := time.Now()
-		next := now.Add(24 * time.Hour)
-		_ = db.Transaction(func(tx *gorm.DB) error {
-			if err := tx.Model(&models.Transaction{}).Where("order_id = ?", inv.OrderID).Updates(map[string]interface{}{"status": "Success"}).Error; err != nil {
-				return err
-			}
-			updates := map[string]interface{}{"status": "Running", "last_return_at": nil, "next_return_at": next}
-			if err := tx.Model(&inv).Updates(updates).Error; err != nil {
-				return err
-			}
-
-			// Get category info to determine if this is Monitor (locked profit)
-			var category models.Category
-			isMonitor := false
-			if err := tx.Where("id = ?", inv.CategoryID).First(&category).Error; err == nil {
-				if category.ProfitType == "locked" {
-					isMonitor = true
-				}
-			}
-
-			// Update user total_invest and total_invest_vip
-			userUpdates := map[string]interface{}{
-				"total_invest":      gorm.Expr("total_invest + ?", inv.Amount),
-				"investment_status": "Active",
-			}
-			if isMonitor {
-				userUpdates["total_invest_vip"] = gorm.Expr("total_invest_vip + ?", inv.Amount)
-			}
-			if err := tx.Model(&models.User{}).Where("id = ?", inv.UserID).Updates(userUpdates).Error; err != nil {
-				return err
-			}
-
-			// Calculate VIP level based on total_invest_vip for locked categories
-			if isMonitor {
-				var user models.User
-				if err := tx.Model(&models.User{}).Select("total_invest_vip").Where("id = ?", inv.UserID).First(&user).Error; err == nil {
-					newLevel := calculateVIPLevel(user.TotalInvestVIP)
-					if err := tx.Model(&models.User{}).Where("id = ?", inv.UserID).Update("level", newLevel).Error; err != nil {
-						return err
-					}
-				}
-			}
-
-			// Bonus rekomendasi investor hanya untuk level 1: 30% dari amount
-			var user models.User
-			if err := tx.Select("id, reff_by").Where("id = ?", inv.UserID).First(&user).Error; err == nil && user.ReffBy != nil {
-				var level1 models.User
-				if err := tx.Select("id, spin_ticket").Where("id = ?", *user.ReffBy).First(&level1).Error; err == nil {
-					// Give spin ticket if investment >= 100k
-					if inv.Amount >= 100000 {
-						if level1.SpinTicket == nil {
-							one := uint(1)
-							tx.Model(&models.User{}).Where("id = ?", level1.ID).Update("spin_ticket", one)
-						} else {
-							tx.Model(&models.User{}).Where("id = ?", level1.ID).UpdateColumn("spin_ticket", gorm.Expr("spin_ticket + 1"))
-						}
-					}
-
-					// Give 30% bonus to direct referrer
-					bonus := round3(inv.Amount * 0.30)
-					tx.Model(&models.User{}).Where("id = ?", level1.ID).UpdateColumn("balance", gorm.Expr("balance + ?", bonus))
-					msg := "Bonus rekomendasi investor"
-					trx := models.Transaction{
-						UserID:          level1.ID,
-						Amount:          bonus,
-						Charge:          0,
-						OrderID:         utils.GenerateOrderID(level1.ID),
-						TransactionFlow: "debit",
-						TransactionType: "team",
-						Message:         &msg,
-						Status:          "Success",
-					}
-					tx.Create(&trx)
-				}
-			}
-			return nil
-		})
-		utils.WriteJSON(w, http.StatusOK, utils.APIResponse{Success: true, Message: "OK"})
-		return
-	}
-
-	_ = db.Transaction(func(tx *gorm.DB) error {
-		_ = tx.Model(&models.Transaction{}).Where("order_id = ?", inv.OrderID).Update("status", "Failed").Error
-		_ = tx.Model(&inv).Update("status", "Cancelled").Error
-		return nil
-	})
-	utils.WriteJSON(w, http.StatusOK, utils.APIResponse{Success: true, Message: "Failed updated"})
 }
 
 // POST /api/cron/daily-returns
@@ -799,212 +502,6 @@ func CronDailyReturnsHandler(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	utils.WriteJSON(w, http.StatusOK, utils.APIResponse{Success: true, Message: "Cron executed", Data: map[string]interface{}{"processed": processed}})
-}
-
-func parseTimeFlexible(s string) (time.Time, error) {
-	if s == "" {
-		return time.Time{}, errors.New("empty")
-	}
-	if t, err := time.Parse(time.RFC3339, s); err == nil {
-		return t, nil
-	}
-	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
-		return t, nil
-	}
-	if t, err := time.Parse("2006-01-02T15:04:05.000Z07:00", s); err == nil {
-		return t, nil
-	}
-	return time.Time{}, fmt.Errorf("cannot parse time: %s", s)
-}
-
-// FIXED: getKytaAccessToken with proper error handling
-func getKytaAccessTokenSafe(ctx context.Context, client *http.Client, baseURL, clientID, clientSecret string) (string, string, error) {
-	url := strings.TrimRight(baseURL, "/") + "/access-token"
-
-	credentials := clientID + ":" + clientSecret
-	encodedCredentials := base64.StdEncoding.EncodeToString([]byte(credentials))
-
-	payload := map[string]string{"grant_type": "client_credentials"}
-	body, _ := json.Marshal(payload)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return "", "Gagal membuat request token", err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Basic "+encodedCredentials)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", "Koneksi ke layanan pembayaran gagal", err
-	}
-	defer resp.Body.Close()
-
-	// Baca response body terlebih dahulu
-	tokenBodyBytes, readErr := io.ReadAll(resp.Body)
-	if readErr != nil {
-		return "", "Gagal membaca response token", readErr
-	}
-
-	// Parse response
-	var tokenResp KytaAccessTokenResponse
-	parseErr := json.Unmarshal(tokenBodyBytes, &tokenResp)
-
-	// Cek HTTP status
-	if resp.StatusCode != http.StatusOK {
-		errorMsg := "Gagal mendapatkan token pembayaran"
-		if parseErr == nil && tokenResp.ResponseMessage != "" {
-			errorMsg = tokenResp.ResponseMessage
-		} else if len(tokenBodyBytes) > 0 && len(tokenBodyBytes) < 500 {
-			errorMsg = string(tokenBodyBytes)
-		}
-		return "", errorMsg, fmt.Errorf("status %d", resp.StatusCode)
-	}
-
-	// Cek parsing error setelah HTTP OK
-	if parseErr != nil {
-		return "", "Gagal parsing response token", parseErr
-	}
-
-	// Cek response code
-	if tokenResp.ResponseCode != "" && tokenResp.ResponseCode != "2000100" && tokenResp.ResponseCode != "200" && !strings.HasPrefix(tokenResp.ResponseCode, "200") {
-		return "", tokenResp.ResponseMessage, errors.New("kytapay error")
-	}
-
-	if tokenResp.ResponseData.AccessToken == "" {
-		return "", "Token pembayaran kosong", errors.New("empty token")
-	}
-
-	return tokenResp.ResponseData.AccessToken, "", nil
-}
-
-// FIXED: createKytaQRIS with proper error handling
-func createKytaQRISSafe(ctx context.Context, client *http.Client, baseURL, accessToken, referenceID string, amount int64, notifyURL, successURL, failedURL string) (*KytaPaymentResponse, string, error) {
-	url := strings.TrimRight(baseURL, "/") + "/payments/create/qris"
-
-	payload := map[string]interface{}{
-		"reference_id": referenceID,
-		"amount":       amount,
-		"notify_url":   notifyURL,
-		"success_url":  successURL,
-		"failed_url":   failedURL,
-		"expires_time": 900,
-	}
-	body, _ := json.Marshal(payload)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return nil, "Gagal membuat request QRIS", err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, "Koneksi ke layanan pembayaran gagal", err
-	}
-	defer resp.Body.Close()
-
-	// Baca response body terlebih dahulu
-	paymentBodyBytes, readErr := io.ReadAll(resp.Body)
-	if readErr != nil {
-		return nil, "Gagal membaca response pembayaran", readErr
-	}
-
-	// Parse response
-	var paymentResp KytaPaymentResponse
-	parseErr := json.Unmarshal(paymentBodyBytes, &paymentResp)
-
-	// Cek HTTP status
-	if resp.StatusCode != http.StatusOK {
-		errorMsg := "Gagal membuat pembayaran QRIS"
-		if parseErr == nil && paymentResp.ResponseMessage != "" {
-			errorMsg = paymentResp.ResponseMessage
-		} else if len(paymentBodyBytes) > 0 && len(paymentBodyBytes) < 500 {
-			errorMsg = string(paymentBodyBytes)
-		}
-		return nil, errorMsg, fmt.Errorf("status %d", resp.StatusCode)
-	}
-
-	// Cek parsing error setelah HTTP OK
-	if parseErr != nil {
-		return nil, "Gagal parsing response pembayaran", parseErr
-	}
-
-	// Cek response code
-	if paymentResp.ResponseCode != "" && paymentResp.ResponseCode != "2001100" && paymentResp.ResponseCode != "200" && !strings.HasPrefix(paymentResp.ResponseCode, "200") {
-		return nil, paymentResp.ResponseMessage, errors.New("kytapay error")
-	}
-
-	return &paymentResp, "", nil
-}
-
-// FIXED: createKytaVA with proper error handling
-func createKytaVASafe(ctx context.Context, client *http.Client, baseURL, accessToken, referenceID string, amount int64, bankCode, notifyURL, successURL, failedURL string) (*KytaPaymentResponse, string, error) {
-	url := strings.TrimRight(baseURL, "/") + "/payments/create/va"
-
-	payload := map[string]interface{}{
-		"reference_id": referenceID,
-		"amount":       amount,
-		"bank_code":    bankCode,
-		"notify_url":   notifyURL,
-		"success_url":  successURL,
-		"failed_url":   failedURL,
-		"expires_time": 900,
-	}
-	body, _ := json.Marshal(payload)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return nil, "Gagal membuat request VA", err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, "Koneksi ke layanan pembayaran gagal", err
-	}
-	defer resp.Body.Close()
-
-	// Baca response body terlebih dahulu
-	paymentBodyBytes, readErr := io.ReadAll(resp.Body)
-	if readErr != nil {
-		return nil, "Gagal membaca response pembayaran", readErr
-	}
-
-	// Parse response
-	var paymentResp KytaPaymentResponse
-	parseErr := json.Unmarshal(paymentBodyBytes, &paymentResp)
-
-	// Cek HTTP status
-	if resp.StatusCode != http.StatusOK {
-		errorMsg := "Gagal membuat pembayaran Virtual Account"
-		if parseErr == nil && paymentResp.ResponseMessage != "" {
-			errorMsg = paymentResp.ResponseMessage
-		} else if len(paymentBodyBytes) > 0 && len(paymentBodyBytes) < 500 {
-			errorMsg = string(paymentBodyBytes)
-		}
-		return nil, errorMsg, fmt.Errorf("status %d", resp.StatusCode)
-	}
-
-	// Cek parsing error setelah HTTP OK
-	if parseErr != nil {
-		return nil, "Gagal parsing response pembayaran", parseErr
-	}
-
-	// Cek response code
-	if paymentResp.ResponseCode != "" && paymentResp.ResponseCode != "2001200" && paymentResp.ResponseCode != "200" && !strings.HasPrefix(paymentResp.ResponseCode, "200") {
-		return nil, paymentResp.ResponseMessage, errors.New("kytapay error")
-	}
-
-	return &paymentResp, "", nil
 }
 
 func round3(f float64) float64 {

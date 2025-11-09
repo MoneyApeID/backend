@@ -173,6 +173,26 @@ CREATE TABLE `investments` (
 -- --------------------------------------------------------
 
 --
+-- Struktur dari tabel `deposits`
+--
+
+CREATE TABLE `deposits` (
+  `id` bigint UNSIGNED NOT NULL,
+  `user_id` int UNSIGNED NOT NULL,
+  `amount` decimal(15,2) NOT NULL,
+  `order_id` varchar(191) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `payment_method` enum('QRIS','BANK') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `payment_channel` enum('BCA','BRI','BNI','MANDIRI','PERMATA','BNC') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `payment_code` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `status` enum('Success','Pending','Failed','Expired') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Pending',
+  `expired_at` datetime NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Struktur dari tabel `payments`
 --
 
@@ -430,6 +450,7 @@ CREATE TABLE `users` (
   `reff_code` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `reff_by` bigint UNSIGNED DEFAULT NULL,
   `balance` decimal(15,2) DEFAULT '0.00',
+  `income` decimal(15,2) DEFAULT '0.00',
   `level` bigint NOT NULL DEFAULT '0' COMMENT 'VIP level (0-5)',
   `total_invest` decimal(15,2) DEFAULT '0.00' COMMENT 'Total all investments',
   `total_invest_vip` decimal(15,2) DEFAULT '0.00' COMMENT 'Total locked category investments for VIP level calculation',
@@ -444,8 +465,8 @@ CREATE TABLE `users` (
 -- Dumping data untuk tabel `users`
 --
 
-INSERT INTO `users` (`id`, `name`, `number`, `password`, `reff_code`, `reff_by`, `balance`, `level`, `total_invest`, `total_invest_vip`, `spin_ticket`, `status`, `investment_status`, `created_at`, `updated_at`) VALUES
-(1, 'Ciroos Users Management', '812345678', '$2y$10$fa5X/6ZfpaNZsa07TyzO3ukL/AtxtGLv.6erFIw9KmXFNYyFbE656', 'CIROOS', 0, 0.00, 0, 0.00, 0.00, 100, 'Active', 'Active', '2025-01-01 00:00:00.000', '2025-01-01 00:00:00.000');
+INSERT INTO `users` (`id`, `name`, `number`, `password`, `reff_code`, `reff_by`, `balance`, `income`,  `level`, `total_invest`, `total_invest_vip`, `spin_ticket`, `status`, `investment_status`, `created_at`, `updated_at`) VALUES
+(1, 'Ciroos Users Management', '812345678', '$2y$10$fa5X/6ZfpaNZsa07TyzO3ukL/AtxtGLv.6erFIw9KmXFNYyFbE656', 'CIROOS', 0, 0.00, 0.00, 0, 0.00, 0.00, 100, 'Active', 'Active', '2025-01-01 00:00:00.000', '2025-01-01 00:00:00.000');
 
 -- --------------------------------------------------------
 
@@ -570,6 +591,15 @@ ALTER TABLE `investments`
   ADD KEY `idx_next_return_at` (`next_return_at`);
 
 --
+-- Indeks untuk tabel `deposits`
+--
+ALTER TABLE `deposits`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `order_id` (`order_id`),
+  ADD KEY `idx_deposits_user_id` (`user_id`),
+  ADD KEY `idx_deposits_status` (`status`);
+
+--
 -- Indeks untuk tabel `payments`
 --
 ALTER TABLE `payments`
@@ -690,172 +720,28 @@ ALTER TABLE `withdrawals`
 -- AUTO_INCREMENT untuk tabel `admins`
 --
 ALTER TABLE `admins`
-  MODIFY `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
-
---
--- AUTO_INCREMENT untuk tabel `banks`
---
-ALTER TABLE `banks`
-  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=13;
+  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT untuk tabel `bank_accounts`
 --
 ALTER TABLE `bank_accounts`
-  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT;
+  MODIFY `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT untuk tabel `categories`
 --
 ALTER TABLE `categories`
-  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
--- AUTO_INCREMENT untuk tabel `forums`
+-- AUTO_INCREMENT untuk tabel `deposits`
 --
-ALTER TABLE `forums`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT;
+ALTER TABLE `deposits`
+  MODIFY `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT untuk tabel `investments`
 --
 ALTER TABLE `investments`
   MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT;
-
---
--- AUTO_INCREMENT untuk tabel `payments`
---
-ALTER TABLE `payments`
-  MODIFY `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT;
-
---
--- AUTO_INCREMENT untuk tabel `payment_settings`
---
-ALTER TABLE `payment_settings`
-  MODIFY `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
-
---
--- AUTO_INCREMENT untuk tabel `products`
---
-ALTER TABLE `products`
-  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=17;
-
---
--- AUTO_INCREMENT untuk tabel `settings`
---
-ALTER TABLE `settings`
-  MODIFY `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
-
---
--- AUTO_INCREMENT untuk tabel `spin_prizes`
---
-ALTER TABLE `spin_prizes`
-  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
-
---
--- AUTO_INCREMENT untuk tabel `tasks`
---
-ALTER TABLE `tasks`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=15;
-
---
--- AUTO_INCREMENT untuk tabel `transactions`
---
-ALTER TABLE `transactions`
-  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT;
-
---
--- AUTO_INCREMENT untuk tabel `users`
---
-ALTER TABLE `users`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=11;
-
---
--- AUTO_INCREMENT untuk tabel `user_spins`
---
-ALTER TABLE `user_spins`
-  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT;
-
---
--- AUTO_INCREMENT untuk tabel `user_tasks`
---
-ALTER TABLE `user_tasks`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT;
-
---
--- AUTO_INCREMENT untuk tabel `withdrawals`
---
-ALTER TABLE `withdrawals`
-  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT;
-
--- --------------------------------------------------------
-
---
--- Struktur untuk view `spin_prizes_with_percentage`
---
-DROP TABLE IF EXISTS `spin_prizes_with_percentage`;
-
-CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `spin_prizes_with_percentage`  AS SELECT `spin_prizes`.`id` AS `id`, `spin_prizes`.`amount` AS `amount`, `spin_prizes`.`code` AS `code`, `spin_prizes`.`chance_weight` AS `chance_weight`, round(((`spin_prizes`.`chance_weight` * 100.0) / (select sum(`spin_prizes`.`chance_weight`) from `spin_prizes` where (`spin_prizes`.`status` = 'Active'))),2) AS `chance_percentage`, `spin_prizes`.`status` AS `status` FROM `spin_prizes` WHERE (`spin_prizes`.`status` = 'Active') ORDER BY `spin_prizes`.`amount` ASC ;
-
---
--- Ketidakleluasaan untuk tabel pelimpahan (Dumped Tables)
---
-
---
--- Ketidakleluasaan untuk tabel `bank_accounts`
---
-ALTER TABLE `bank_accounts`
-  ADD CONSTRAINT `fk_bank_accounts_bank` FOREIGN KEY (`bank_id`) REFERENCES `banks` (`id`) ON DELETE RESTRICT,
-  ADD CONSTRAINT `fk_bank_accounts_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
-
---
--- Ketidakleluasaan untuk tabel `forums`
---
-ALTER TABLE `forums`
-  ADD CONSTRAINT `forums_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`);
-
---
--- Ketidakleluasaan untuk tabel `investments`
---
-ALTER TABLE `investments`
-  ADD CONSTRAINT `fk_investments_product` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE RESTRICT,
-  ADD CONSTRAINT `fk_investments_category` FOREIGN KEY (`category_id`) REFERENCES `categories` (`id`) ON DELETE RESTRICT,
-  ADD CONSTRAINT `fk_investments_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
-
---
--- Ketidakleluasaan untuk tabel `products`
---
-ALTER TABLE `products`
-  ADD CONSTRAINT `fk_products_category` FOREIGN KEY (`category_id`) REFERENCES `categories` (`id`) ON DELETE RESTRICT;
-
---
--- Ketidakleluasaan untuk tabel `transactions`
---
-ALTER TABLE `transactions`
-  ADD CONSTRAINT `fk_transactions_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
-
---
--- Ketidakleluasaan untuk tabel `user_spins`
---
-ALTER TABLE `user_spins`
-  ADD CONSTRAINT `fk_spins_prize` FOREIGN KEY (`prize_id`) REFERENCES `spin_prizes` (`id`) ON DELETE RESTRICT,
-  ADD CONSTRAINT `fk_user_spins_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
-
---
--- Ketidakleluasaan untuk tabel `user_tasks`
---
-ALTER TABLE `user_tasks`
-  ADD CONSTRAINT `user_tasks_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`),
-  ADD CONSTRAINT `user_tasks_ibfk_2` FOREIGN KEY (`task_id`) REFERENCES `tasks` (`id`);
-
---
--- Ketidakleluasaan untuk tabel `withdrawals`
---
-ALTER TABLE `withdrawals`
-  ADD CONSTRAINT `fk_bank_account_id` FOREIGN KEY (`bank_account_id`) REFERENCES `bank_accounts` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  ADD CONSTRAINT `fk_withdrawals_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
-COMMIT;
-
-/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
-/*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
-/*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;

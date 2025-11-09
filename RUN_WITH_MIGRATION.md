@@ -64,15 +64,13 @@ DB_USER=root
 DB_PASS=your_password
 DB_NAME=ciroos_db
 
-# Kyta Payment
-KYTAPAY_CLIENT_ID=your_client_id
-KYTAPAY_CLIENT_SECRET=your_secret
-KYTAPAY_BASE_URL=https://api.kytapay.com/v2
-
-# URLs
-NOTIFY_URL=https://your-domain.com/api/payments/kyta/webhook
-SUCCESS_URL=https://your-domain.com/payment/success
-FAILED_URL=https://your-domain.com/payment/failed
+# LinkQu deposit configuration
+LINKQU_BASE_URL=https://partner-api.linkqu.id
+LINKQU_USERNAME=your_linkqu_username
+LINKQU_PIN=your_linkqu_pin
+LINKQU_CLIENT_ID=your_linkqu_client_id
+LINKQU_CLIENT_SECRET=your_linkqu_client_secret
+LINKQU_CALLBACK_PAYMENT=https://your-domain.com/api/payments/linkqu/callback
 
 # JWT
 JWT_SECRET=your_jwt_secret
@@ -208,6 +206,13 @@ UPDATE products SET required_vip = 4 WHERE id = 11;
 UPDATE products SET required_vip = 5 WHERE id = 12;
 UPDATE products SET required_vip = 3 WHERE id IN (13, 14, 15, 16);
 ```
+
+### Masalah: Konfigurasi pembayaran
+
+**Solusi:**
+1. Pastikan variabel LINKQU_* sudah di-set di environment / `.env`
+2. Callback URL harus mengarah ke `/api/payments/linkqu/callback`
+3. Gunakan endpoint `/api/users/deposits` untuk membuat kode pembayaran baru
 
 ---
 

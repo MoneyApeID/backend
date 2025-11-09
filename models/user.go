@@ -10,6 +10,7 @@ type User struct {
 	ReffCode         string    `gorm:"size:20;uniqueIndex;not null" json:"reff_code"`
 	ReffBy           *uint     `gorm:"column:reff_by" json:"reff_by"`
 	Balance          float64   `gorm:"type:decimal(15,2);default:0" json:"balance"`
+	Income           float64   `gorm:"type:decimal(15,2);default:0" json:"income"`
 	Level            *uint     `gorm:"column:level;default:0" json:"level"`
 	TotalInvest      float64   `gorm:"column:total_invest;type:decimal(15,2);default:0" json:"total_invest"`
 	TotalInvestVIP   float64   `gorm:"column:total_invest_vip;type:decimal(15,2);default:0" json:"total_invest_vip"`

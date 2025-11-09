@@ -49,8 +49,11 @@ func UsersRoutes(api *mux.Router) {
 	api.Handle("/users/investments/active", userLimiter.Middleware(middleware.AuthMiddleware(http.HandlerFunc(users.GetActiveInvestmentsHandler)))).Methods(http.MethodGet)
 	api.Handle("/users/investments/{id:[0-9]+}", userLimiter.Middleware(middleware.AuthMiddleware(http.HandlerFunc(users.GetInvestmentHandler)))).Methods(http.MethodGet)
 
+	// Deposit endpoints
+	api.Handle("/users/deposits", userLimiter.Middleware(middleware.AuthMiddleware(http.HandlerFunc(users.CreateDepositHandler)))).Methods(http.MethodPost)
+
 	// Handle Payments get
-	api.Handle("/users/payments/{order_id}", userLimiter.Middleware(middleware.AuthMiddleware(http.HandlerFunc(users.GetPaymentDetailsHandler)))).Methods(http.MethodGet)
+	api.Handle("/users/payments/{order_id}", userLimiter.Middleware(middleware.AuthMiddleware(http.HandlerFunc(users.GetDepositDetailsHandler)))).Methods(http.MethodGet)
 
 	// Protected endpoint: withdrawal request
 	api.Handle("/users/withdrawal", userLimiter.Middleware(middleware.AuthMiddleware(http.HandlerFunc(users.WithdrawalHandler)))).Methods(http.MethodPost)

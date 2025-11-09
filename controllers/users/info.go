@@ -54,6 +54,7 @@ func InfoHandler(w http.ResponseWriter, r *http.Request) {
 				"number":         user.Number,
 				"reff_code":      user.ReffCode,
 				"balance":        int64(user.Balance),
+				"income":		  int64(user.Income),
 				"level":          user.Level,
 				"total_invest":   int64(user.TotalInvest),
 				"total_invest_vip": int64(user.TotalInvestVIP),

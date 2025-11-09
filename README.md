@@ -10,7 +10,7 @@ StoneForm is a production-ready RESTful API for investment, banking, and user ma
 - **Investment Products** with daily returns
 - **Bank Account Management**
 - **Forum & Task System**
-- **Payment Integration** (Kytapay)
+- **Payment Integration** (LinkQu QRIS & Virtual Account deposits)
 - **Production-ready** Docker deployment
 - **Security hardened** with best practices
 
@@ -79,6 +79,14 @@ DB_NAME=your_database_name
 # Security
 JWT_SECRET=your_very_secure_jwt_secret_key_minimum_32_characters
 
+# LinkQu Payments
+LINKQU_BASE_URL=https://partner-api.linkqu.id
+LINKQU_USERNAME=your_linkqu_username
+LINKQU_PIN=your_linkqu_pin
+LINKQU_CLIENT_ID=your_linkqu_client_id
+LINKQU_CLIENT_SECRET=your_linkqu_client_secret
+LINKQU_CALLBACK_PAYMENT=https://your-domain.com/api/payments/linkqu/callback
+
 # Redis
 REDIS_ADDR=redis:6379
 REDIS_PASS=your_redis_password
@@ -115,6 +123,13 @@ NOTIFY_URL=https://yourdomain.com/api/callback/payment
 SUCCESS_URL=https://yourdomain.com/payment/success
 FAILED_URL=https://yourdomain.com/payment/failed
 
+LINKQU_BASE_URL=
+LINKQU_USERNAME=
+LINKQU_PIN=
+LINKQU_CLIENT_ID=
+LINKQU_CLIENT_SECRET=
+LINKQU_CALLBACK_PAYMENT=https://yourdomain.com/api/payments/linkqu/callback
+
 # Optional: full DSN (overrides DB_HOST/PORT/USER/PASS/NAME if set)
 # Example for Docker: root:123456789@tcp(db:3306)/v1?charset=utf8mb4&parseTime=True&loc=Local
 DB_DSN=
@@ -133,6 +148,7 @@ DB_DSN=
 | POST   | /users/investments                    | Create investment (JWT required)        |
 | GET    | /users/investments                    | List user investments (JWT required)    |
 | GET    | /users/investments/{id}               | Get investment detail (JWT required)    |
+| POST   | /users/deposits                       | Create deposit payment (JWT required)   |
 | POST   | /users/withdrawal                     | Withdraw funds (JWT required)           |
 | GET    | /users/bank                           | List user bank accounts (JWT required)  |
 | POST   | /users/bank                           | Add bank account (JWT required)         |
@@ -143,7 +159,7 @@ DB_DSN=
 | POST   | /users/task/submit                    | Submit task (JWT required)              |
 | GET    | /users/forum                          | List forum posts (JWT required)         |
 | POST   | /users/forum/submit                   | Submit forum post (JWT required)        |
-| POST   | /payments/kyta/webhook                | Payment webhook (no auth)               |
+| POST   | /payments/linkqu/callback             | LinkQu payment callback (no auth)       |
 | POST   | /cron/daily-returns                   | Cron: process daily returns (X-CRON-KEY)|
 
 ## Endpoint Details
