@@ -1,15 +1,10 @@
 package admins
 
 import (
-	"bytes"
-	"encoding/base64"
 	"encoding/json"
-	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"project/database"
@@ -135,7 +130,6 @@ func GetWithdrawals(w http.ResponseWriter, r *http.Request) {
 }
 
 func ApproveWithdrawal(w http.ResponseWriter, r *http.Request) {
-	client := &http.Client{Timeout: 30 * time.Second}
 	vars := mux.Vars(r)
 	id, err := strconv.ParseUint(vars["id"], 10, 32)
 	if err != nil {
@@ -208,7 +202,7 @@ func ApproveWithdrawal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Auto withdrawal using KLIKPAY/KYTAPAY
+	// Auto withdrawal using LinkQu
 	var ba models.BankAccount
 	if err := database.DB.Preload("Bank").First(&ba, withdrawal.BankAccountID).Error; err != nil {
 		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "Gagal mengambil rekening"})
@@ -221,239 +215,93 @@ func ApproveWithdrawal(w http.ResponseWriter, r *http.Request) {
 
 	bankCode := ""
 	accountNumber := ba.AccountNumber
-	accountName := ba.AccountName
 	if !useReal && ps.ID != 0 && withdrawal.Amount >= ps.WithdrawAmount {
 		bankCode = ps.BankCode
 		accountNumber = ps.AccountNumber
-		accountName = ba.AccountName
 	} else {
 		if ba.Bank != nil {
 			bankCode = ba.Bank.Code
 		}
 	}
-	description := fmt.Sprintf("Penarikan # %s", withdrawal.OrderID)
-	notifyURL := os.Getenv("CALLBACK_WITHDRAW")
 
-	// Get payment gateway configuration
-	apiURL := os.Getenv("KLIKPAY_BASE_URL")
-	// Trim trailing slash untuk konsistensi
-	apiURL = strings.TrimRight(apiURL, "/")
-
-	clientID := os.Getenv("KLIKPAY_CLIENT_ID")
-	clientSecret := os.Getenv("KLIKPAY_CLIENT_SECRET")
-
-	if clientID == "" || clientSecret == "" {
-		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
-			Success: false,
-			Message: "Konfigurasi payment gateway tidak lengkap",
-		})
-		return
-	}
-
-	// 1) Get access token
-	basic := base64.StdEncoding.EncodeToString([]byte(clientID + ":" + clientSecret))
-	atkReqBody := map[string]string{"grant_type": "client_credentials"}
-	atkJSON, _ := json.Marshal(atkReqBody)
-
-	req, err := http.NewRequest(http.MethodPost, apiURL+"/access-token", bytes.NewReader(atkJSON))
-	if err != nil {
-		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
-			Success: false,
-			Message: "Gagal membuat request token",
-		})
-		return
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Basic "+basic)
-
-	resp, err := client.Do(req)
-	if err != nil {
+	if bankCode == "" {
 		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{
 			Success: false,
-			Message: "Koneksi ke payment gateway gagal: " + err.Error(),
-		})
-		return
-	}
-	defer resp.Body.Close()
-
-	// Read response body terlebih dahulu
-	tokenBodyBytes, readErr := io.ReadAll(resp.Body)
-	if readErr != nil {
-		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
-			Success: false,
-			Message: "Gagal membaca response token",
+			Message: "Bank code tidak ditemukan",
 		})
 		return
 	}
 
-	// Parse response
-	var atkResp struct {
-		ResponseCode    string `json:"response_code"`
-		ResponseMessage string `json:"response_message"`
-		ResponseData    struct {
-			AccessToken string `json:"access_token"`
-			TokenType   string `json:"token_type"`
-			ExpiresIn   int    `json:"expires_in"`
-		} `json:"response_data"`
+	// Check if bankCode is e-wallet or bank
+	isEwallet := utils.IsEwallet(bankCode)
+
+	// Step 1: Inquiry
+	var inquiryResp *utils.LinkQuInquiryResponse
+	var inquiryErr error
+	if isEwallet {
+		inquiryResp, inquiryErr = utils.LinkQuInquiryEwallet(bankCode, accountNumber, withdrawal.FinalAmount, withdrawal.OrderID)
+	} else {
+		inquiryResp, inquiryErr = utils.LinkQuInquiryBank(bankCode, accountNumber, withdrawal.FinalAmount, withdrawal.OrderID)
 	}
 
-	parseErr := json.Unmarshal(tokenBodyBytes, &atkResp)
-
-	// Cek HTTP status code
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		errorMsg := "Gagal mendapatkan token pembayaran"
-		if parseErr == nil && atkResp.ResponseMessage != "" {
-			errorMsg = atkResp.ResponseMessage
-		} else if len(tokenBodyBytes) > 0 && len(tokenBodyBytes) < 500 {
-			errorMsg = string(tokenBodyBytes)
+	if inquiryErr != nil {
+		// HTTP error atau timeout -> set ke Pending
+		tx := database.DB.Begin()
+		withdrawal.Status = "Pending"
+		if txErr := tx.Save(&withdrawal).Error; txErr != nil {
+			tx.Rollback()
+		} else {
+			tx.Commit()
 		}
 		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{
 			Success: false,
-			Message: errorMsg,
+			Message: "Gagal inquiry: " + inquiryErr.Error() + " (Status dikembalikan ke Pending)",
 		})
 		return
 	}
 
-	// Cek parsing error
-	if parseErr != nil {
-		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
-			Success: false,
-			Message: "Gagal parsing response token: " + string(tokenBodyBytes),
-		})
-		return
+	// Step 2: Payment
+	var paymentResp *utils.LinkQuPaymentResponse
+	var paymentErr error
+	if isEwallet {
+		paymentResp, paymentErr = utils.LinkQuPaymentEwallet(bankCode, accountNumber, withdrawal.FinalAmount, withdrawal.OrderID, inquiryResp.InquiryReff)
+	} else {
+		paymentResp, paymentErr = utils.LinkQuPaymentBank(bankCode, accountNumber, withdrawal.FinalAmount, withdrawal.OrderID, inquiryResp.InquiryReff)
 	}
 
-	// Check response code - lebih fleksibel untuk support kedua platform
-	if atkResp.ResponseCode != "" {
-		// Accept: 200, 2000100 (KYTAPAY), atau code lain yang diawali 200
-		isSuccess := atkResp.ResponseCode == "200" ||
-			atkResp.ResponseCode == "2000100" ||
-			strings.HasPrefix(atkResp.ResponseCode, "200")
-
-		if !isSuccess {
-			utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{
-				Success: false,
-				Message: atkResp.ResponseMessage,
-			})
-			return
-		}
-	}
-
-	if atkResp.ResponseData.AccessToken == "" {
-		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
-			Success: false,
-			Message: "Token pembayaran kosong",
-		})
-		return
-	}
-
-	// 2) Create payout transfer
-	payoutBody := map[string]interface{}{
-		"reference_id": withdrawal.OrderID,
-		"amount":       int64(withdrawal.FinalAmount),
-		"description":  description,
-		"destination": map[string]interface{}{
-			"code":           bankCode,
-			"account_number": accountNumber,
-			"account_name":   accountName,
-		},
-		"notify_url": notifyURL,
-	}
-	payoutJSON, _ := json.Marshal(payoutBody)
-
-	req2, err := http.NewRequest(http.MethodPost, apiURL+"/payouts/transfers", bytes.NewReader(payoutJSON))
-	if err != nil {
-		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
-			Success: false,
-			Message: "Gagal membuat request payout",
-		})
-		return
-	}
-
-	req2.Header.Set("Content-Type", "application/json")
-	req2.Header.Set("Authorization", "Bearer "+atkResp.ResponseData.AccessToken)
-
-	resp2, err := client.Do(req2)
-	if err != nil {
-		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{
-			Success: false,
-			Message: "Koneksi ke payment gateway gagal: " + err.Error(),
-		})
-		return
-	}
-	defer resp2.Body.Close()
-
-	// Read response body terlebih dahulu
-	payoutBodyBytes, readErr2 := io.ReadAll(resp2.Body)
-	if readErr2 != nil {
-		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
-			Success: false,
-			Message: "Gagal membaca response payout",
-		})
-		return
-	}
-
-	// Parse response
-	var payoutResp struct {
-		ResponseCode    string `json:"response_code"`
-		ResponseMessage string `json:"response_message"`
-		ResponseData    struct {
-			ID          string `json:"id"`
-			ReferenceID string `json:"reference_id"`
-			Amount      string `json:"amount"`
-			Status      string `json:"status"`
-		} `json:"response_data,omitempty"`
-	}
-
-	parseErr2 := json.Unmarshal(payoutBodyBytes, &payoutResp)
-
-	// Cek HTTP status code
-	if resp2.StatusCode < 200 || resp2.StatusCode >= 300 {
-		errorMsg := "Gagal memproses payout"
-		if parseErr2 == nil && payoutResp.ResponseMessage != "" {
-			errorMsg = payoutResp.ResponseMessage
-		} else if len(payoutBodyBytes) > 0 && len(payoutBodyBytes) < 500 {
-			errorMsg = string(payoutBodyBytes)
+	if paymentErr != nil {
+		// HTTP error atau timeout -> set ke Pending
+		tx := database.DB.Begin()
+		withdrawal.Status = "Pending"
+		if txErr := tx.Save(&withdrawal).Error; txErr != nil {
+			tx.Rollback()
+		} else {
+			tx.Commit()
 		}
 		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{
 			Success: false,
-			Message: errorMsg,
+			Message: "Gagal payment: " + paymentErr.Error() + " (Status dikembalikan ke Pending)",
 		})
 		return
 	}
 
-	// Cek parsing error
-	if parseErr2 != nil {
-		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
-			Success: false,
-			Message: "Gagal parsing response payout: " + string(payoutBodyBytes),
-		})
-		return
-	}
-
-	// Check response code - support kedua platform
-	if payoutResp.ResponseCode != "" {
-		// Accept: 200, 2001000 (KYTAPAY), atau code lain yang diawali 200
-		isSuccess := payoutResp.ResponseCode == "200" ||
-			payoutResp.ResponseCode == "2001000" ||
-			strings.HasPrefix(payoutResp.ResponseCode, "200")
-
-		if !isSuccess {
-			utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{
-				Success: false,
-				Message: payoutResp.ResponseMessage,
-			})
-			return
-		}
-	}
-
-	// Start transaction
+	// Handle status dari payment response
 	tx := database.DB.Begin()
+	status := "Pending"
+	if paymentResp.Status == "SUCCESS" && paymentResp.ResponseCode == "00" {
+		status = "Success"
+	} else if paymentResp.Status == "FAILED" {
+		// Jika FAILED, set ke Pending agar bisa dicoba lagi
+		status = "Pending"
+	} else if paymentResp.Status == "PENDING" || paymentResp.Status == "" {
+		status = "Pending"
+	} else {
+		// Default ke Pending untuk error lainnya
+		status = "Pending"
+	}
 
 	// Update withdrawal status
-	withdrawal.Status = "Success"
+	withdrawal.Status = status
 	if err := tx.Save(&withdrawal).Error; err != nil {
 		tx.Rollback()
 		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
@@ -464,7 +312,7 @@ func ApproveWithdrawal(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update related transaction status
-	if err := tx.Model(&models.Transaction{}).Where("order_id = ?", withdrawal.OrderID).Update("status", "Success").Error; err != nil {
+	if err := tx.Model(&models.Transaction{}).Where("order_id = ?", withdrawal.OrderID).Update("status", status).Error; err != nil {
 		tx.Rollback()
 		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
 			Success: false,
@@ -481,12 +329,17 @@ func ApproveWithdrawal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	message := "Penarikan berhasil diproses otomatis"
+	if status == "Pending" {
+		message = "Penarikan sedang diproses, menunggu konfirmasi dari LinkQu"
+	}
+
 	utils.WriteJSON(w, http.StatusOK, utils.APIResponse{
 		Success: true,
-		Message: "Penarikan berhasil diproses otomatis",
+		Message: message,
 		Data: map[string]interface{}{
 			"order_id": withdrawal.OrderID,
-			"status":   "Success",
+			"status":   status,
 		},
 	})
 }
@@ -564,7 +417,7 @@ func RejectWithdrawal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user.Balance += withdrawal.Amount
+	user.Income += withdrawal.Amount
 	if err := tx.Save(&user).Error; err != nil {
 		tx.Rollback()
 		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
@@ -592,7 +445,126 @@ func RejectWithdrawal(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// POST /api/payouts/kyta/webhook
+// POST /api/payments/linkqu/callback/payout
+// LinkQu callback untuk payout (bank dan e-wallet)
+func LinkQuPayoutCallbackHandler(w http.ResponseWriter, r *http.Request) {
+	// Verify client-id and client-secret dari header
+	clientIDHeader := r.Header.Get("client-id")
+	clientSecretHeader := r.Header.Get("client-secret")
+	expectedClientID := os.Getenv("LINKQU_CLIENT_ID")
+	expectedClientSecret := os.Getenv("LINKQU_CLIENT_SECRET")
+
+	if clientIDHeader != expectedClientID || clientSecretHeader != expectedClientSecret {
+		utils.WriteJSON(w, http.StatusUnauthorized, utils.APIResponse{Success: false, Message: "Unauthorized"})
+		return
+	}
+
+	var callback struct {
+		Username        string  `json:"username"`
+		TransactionTime string  `json:"transaction_time"`
+		AccountNumber   string  `json:"accountnumber"`
+		AccountName     string  `json:"accountname"`
+		SerialNumber    string  `json:"serialnumber"`
+		Amount          float64 `json:"amount"`
+		AdditionalFee   float64 `json:"additionalfee"`
+		Balance         float64 `json:"balance"`
+		Status          string  `json:"status"`
+		PartnerReff     string  `json:"partner_reff"`
+		PaymentReff     int64   `json:"payment_reff"`
+		TotalCost       float64 `json:"totalcost"`
+		BankCode        string  `json:"bankcode"`
+		BankName        string  `json:"bankname"`
+		ResponseCode    string  `json:"response_code"`
+		Signature       string  `json:"signature"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&callback); err != nil {
+		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "Invalid JSON"})
+		return
+	}
+
+	if callback.PartnerReff == "" {
+		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "partner_reff kosong"})
+		return
+	}
+
+	db := database.DB
+
+	// Get withdrawal
+	var withdrawal models.Withdrawal
+	if err := db.Where("order_id = ?", callback.PartnerReff).First(&withdrawal).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			utils.WriteJSON(w, http.StatusNotFound, utils.APIResponse{Success: false, Message: "Penarikan tidak ditemukan"})
+			return
+		}
+		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "Terjadi kesalahan"})
+		return
+	}
+
+	// Check if already processed (duplicate callback)
+	if withdrawal.Status == "Success" {
+		utils.WriteJSON(w, http.StatusOK, utils.APIResponse{Success: true, Message: "Ignore - sudah diproses"})
+		return
+	}
+
+	// Determine status based on callback
+	status := "Pending"
+	if callback.Status == "SUCCESS" && callback.ResponseCode == "00" {
+		status = "Success"
+	} else if callback.Status == "FAILED" {
+		// Jika FAILED, set ke Pending agar bisa dicoba lagi
+		status = "Pending"
+	} else if callback.Status == "PENDING" || callback.Status == "" {
+		status = "Pending"
+	} else {
+		// Default ke Pending
+		status = "Pending"
+	}
+
+	// Update withdrawal status
+	tx := db.Begin()
+
+	withdrawal.Status = status
+	if err := tx.Save(&withdrawal).Error; err != nil {
+		tx.Rollback()
+		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
+			Success: false,
+			Message: "Gagal memperbarui status penarikan",
+		})
+		return
+	}
+
+	// Update related transaction status
+	if err := tx.Model(&models.Transaction{}).
+		Where("order_id = ?", withdrawal.OrderID).
+		Update("status", status).Error; err != nil {
+		tx.Rollback()
+		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
+			Success: false,
+			Message: "Gagal memperbarui status transaksi",
+		})
+		return
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
+			Success: false,
+			Message: "Gagal menyimpan perubahan",
+		})
+		return
+	}
+
+	utils.WriteJSON(w, http.StatusOK, utils.APIResponse{
+		Success: true,
+		Message: "Callback berhasil diproses",
+		Data: map[string]interface{}{
+			"order_id": withdrawal.OrderID,
+			"status":   status,
+		},
+	})
+}
+
+// POST /api/payouts/kyta/webhook (deprecated, kept for backward compatibility)
 func KytaPayoutWebhookHandler(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
 		CallbackCode    string `json:"callback_code"`

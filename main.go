@@ -60,6 +60,10 @@ func main() {
 			&models.Setting{ClosedRegister: false, Maintenance: false},
 			&models.Payment{},
 			&models.PaymentSettings{},
+			&models.Tutorial{},
+			&models.BinaryNode{},
+			&models.Reward{},
+			&models.RewardProgress{},
 		); err != nil {
 			log.Fatalf("failed to migrate database: %v", err)
 		}

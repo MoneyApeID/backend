@@ -182,19 +182,6 @@ func TeamDataHandler(w http.ResponseWriter, r *http.Request) {
 		users = level3
 	}
 
-	// Helper to censor phone number (mask last 4 digits)
-	censorNumber := func(num string) string {
-		n := len(num)
-		if n <= 4 {
-			return num
-		}
-		if n <= 7 {
-			return num[:n-4] + "****"
-		}
-		// Show first 4, mask 4, show rest
-		return num[:3] + "****" + num[n-4:]
-	}
-
 	// Pagination: page + limit from query
 	pageStr := r.URL.Query().Get("page")
 	limitStr := r.URL.Query().Get("limit")
@@ -219,7 +206,7 @@ func TeamDataHandler(w http.ResponseWriter, r *http.Request) {
 	for _, u := range users[start:end] {
 		data = append(data, map[string]interface{}{
 			"name":         u.Name,
-			"number":       censorNumber(u.Number),
+			"number":       u.Number,
 			"active":       strings.ToLower(u.InvestmentStatus) == "active",
 			"total_invest": u.TotalInvest,
 		})

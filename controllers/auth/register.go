@@ -119,20 +119,30 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	level := uint(1)
 	newUser := models.User{
-		Name:        req.Name,
-		Number:      req.Number,
-		Password:    string(hashed),
-		ReffCode:    code,
-		ReffBy:      reffBy,
-		Balance:     2000,
-		TotalInvest: 0,
-		Status:      "Active",
+		Name:          req.Name,
+		Number:        req.Number,
+		Password:      string(hashed),
+		ReffCode:      code,
+		ReffBy:        reffBy,
+		Balance:       2000,
+		Level:         &level,
+		Status:        "Active",
 	}
 
 	if err := db.Create(&newUser).Error; err != nil {
-		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "Registrasi gagal, silakan coba lagi"})
+		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "Registrasi gagal, silakan coba lagi", Data: err.Error()})
 		return
+	}
+
+	// Assign user baru ke binary tree (kiri/kanan) jika ada upline
+	if reffBy != nil {
+		// Assign binary node (kiri atau kanan)
+		if err := utils.AssignBinaryNode(*reffBy, newUser.ID); err != nil {
+			// Log error tapi jangan gagalkan registrasi
+			// Binary assignment bisa dilakukan nanti jika diperlukan
+		}
 	}
 
 	newTransaction := models.Transaction{
@@ -167,7 +177,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 
 	var setting models.Setting
 	err = db.Model(&models.Setting{}).
-		Select("name, company, logo, min_withdraw, max_withdraw, withdraw_charge, link_cs, link_group, link_app").
+		Select("name, company, popup, popup_title, min_withdraw, max_withdraw, withdraw_charge, link_cs, link_group, link_app").
 		Take(&setting).Error
 	healthy := true
 	if err != nil {
@@ -191,6 +201,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 				"number":           newUser.Number,
 				"reff_code":        newUser.ReffCode,
 				"balance":          int64(newUser.Balance),
+				"income":           int64(newUser.Income),
 				"level":            newUser.Level,
 				"total_invest":     int64(newUser.TotalInvest),
 				"total_invest_vip": int64(newUser.TotalInvestVIP),
@@ -201,7 +212,8 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 			"application": map[string]interface{}{
 				"name":            setting.Name,
 				"company":         setting.Company,
-				"logo":            setting.Logo,
+				"popup":           setting.Popup,
+				"popup_title":     setting.PopupTitle,
 				"min_withdraw":    int64(setting.MinWithdraw),
 				"max_withdraw":    int64(setting.MaxWithdraw),
 				"withdraw_charge": int64(setting.WithdrawCharge),

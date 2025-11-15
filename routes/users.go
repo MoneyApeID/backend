@@ -51,6 +51,7 @@ func UsersRoutes(api *mux.Router) {
 
 	// Deposit endpoints
 	api.Handle("/users/deposits", userLimiter.Middleware(middleware.AuthMiddleware(http.HandlerFunc(users.CreateDepositHandler)))).Methods(http.MethodPost)
+	api.Handle("/users/deposits", userLimiter.Middleware(middleware.AuthMiddleware(http.HandlerFunc(users.ListDepositsHandler)))).Methods(http.MethodGet)
 
 	// Handle Payments get
 	api.Handle("/users/payments/{order_id}", userLimiter.Middleware(middleware.AuthMiddleware(http.HandlerFunc(users.GetDepositDetailsHandler)))).Methods(http.MethodGet)
@@ -77,4 +78,15 @@ func UsersRoutes(api *mux.Router) {
 
 	api.Handle("/users/task", userLimiter.Middleware(middleware.AuthMiddleware(http.HandlerFunc(users.TaskListHandler)))).Methods(http.MethodGet)
 	api.Handle("/users/task/submit", userLimiter.Middleware(middleware.AuthMiddleware(http.HandlerFunc(users.TaskSubmitHandler)))).Methods(http.MethodPost)
+
+	// Tutorial endpoints
+	api.Handle("/users/tutorials", userLimiter.Middleware(middleware.AuthMiddleware(http.HandlerFunc(users.ListTutorialsHandler)))).Methods(http.MethodGet)
+
+	// Popup endpoint
+	api.Handle("/users/popup", userLimiter.Middleware(middleware.AuthMiddleware(http.HandlerFunc(users.GetPopupHandler)))).Methods(http.MethodGet)
+
+	// Binary system endpoints
+	api.Handle("/users/binary/structure", userLimiter.Middleware(middleware.AuthMiddleware(http.HandlerFunc(users.GetBinaryStructureHandler)))).Methods(http.MethodGet)
+	api.Handle("/users/binary/omset", userLimiter.Middleware(middleware.AuthMiddleware(http.HandlerFunc(users.GetBinaryOmsetHandler)))).Methods(http.MethodGet)
+	api.Handle("/users/rewards", userLimiter.Middleware(middleware.AuthMiddleware(http.HandlerFunc(users.GetRewardsHandler)))).Methods(http.MethodGet)
 }

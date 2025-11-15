@@ -86,7 +86,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	// Ambil data settings
 	var setting models.Setting
 	err = db.Model(&models.Setting{}).
-		Select("name, company, logo, min_withdraw, max_withdraw, withdraw_charge, link_cs, link_group, link_app").
+		Select("name, company, popup, popup_title, min_withdraw, max_withdraw, withdraw_charge, link_cs, link_group, link_app").
 		Take(&setting).Error
 	healthy := true
 	if err != nil {
@@ -105,6 +105,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 				"number":           user.Number,
 				"reff_code":        user.ReffCode,
 				"balance":          int64(user.Balance),
+				"income":           int64(user.Income),
 				"level":            user.Level,
 				"total_invest":     int64(user.TotalInvest),
 				"total_invest_vip": int64(user.TotalInvestVIP),
@@ -115,7 +116,8 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 			"application": map[string]interface{}{
 				"name":            setting.Name,
 				"company":         setting.Company,
-				"logo":            setting.Logo,
+				"popup":           setting.Popup,
+				"popup_title":     setting.PopupTitle,
 				"min_withdraw":    int64(setting.MinWithdraw),
 				"max_withdraw":    int64(setting.MaxWithdraw),
 				"withdraw_charge": int64(setting.WithdrawCharge),

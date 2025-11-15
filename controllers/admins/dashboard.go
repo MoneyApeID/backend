@@ -138,13 +138,13 @@ func GetDashboardStats(w http.ResponseWriter, r *http.Request) {
 		Where("status = ?", "Pending").
 		Count(&stats.PendingWithdrawals)
 
-	// Get total balance of all users
+	// Get total balance of all users (balance + income)
 	type Result struct {
 		TotalBalance float64
 	}
 	var result Result
 	db.Model(&models.User{}).
-		Select("COALESCE(SUM(balance), 0) as total_balance").
+		Select("COALESCE(SUM(balance + income), 0) as total_balance").
 		Scan(&result)
 	stats.TotalBalance = result.TotalBalance
 

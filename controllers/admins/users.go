@@ -3,6 +3,7 @@ package admins
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -23,6 +24,7 @@ type UserResponse struct {
 	ReffCode         string  `json:"reff_code"`
 	ReffBy           uint    `json:"reff_by"`
 	Balance          float64 `json:"balance"`
+	Income           float64 `json:"income"`
 	Level            int     `json:"level,omitempty"`
 	TotalInvest      float64 `json:"total_invest"`
 	SpinTicket       int     `json:"spin_ticket"`
@@ -80,6 +82,7 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 				return 0
 			}(),
 			Balance:     user.Balance,
+			Income:      user.Income,
 			TotalInvest: user.TotalInvest,
 			SpinTicket: func() int {
 				if user.SpinTicket != nil {
@@ -141,6 +144,7 @@ func GetUserDetail(w http.ResponseWriter, r *http.Request) {
 			}
 		}(),
 		Balance: user.Balance,
+		Income: user.Income,
 		Level: func() int {
 			if user.Level != nil {
 				return int(*user.Level)
@@ -274,8 +278,9 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 type UpdateBalanceRequest struct {
-	Amount float64 `json:"amount"`
-	Type   string  `json:"type"` // "add" or "less"
+	Amount      float64 `json:"amount"`
+	Type        string  `json:"type"`         // "add" or "less"
+	BalanceType string  `json:"balance_type"` // "balance" or "income"
 }
 
 func UpdateUserBalance(w http.ResponseWriter, r *http.Request) {
@@ -306,6 +311,18 @@ func UpdateUserBalance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate balance_type, default to "balance" if not provided
+	if req.BalanceType == "" {
+		req.BalanceType = "balance"
+	}
+	if req.BalanceType != "balance" && req.BalanceType != "income" {
+		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{
+			Success: false,
+			Message: "balance_type harus 'balance' atau 'income'",
+		})
+		return
+	}
+
 	var user models.User
 	if err := database.DB.First(&user, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -326,17 +343,22 @@ func UpdateUserBalance(w http.ResponseWriter, r *http.Request) {
 
 	switch req.Type {
 	case "add":
-		user.Balance += req.Amount
+		// Update balance or income based on balance_type
+		if req.BalanceType == "balance" {
+			user.Balance += req.Amount
+		} else {
+			user.Income += req.Amount
+		}
 
-		// Jalankan dalam transaksi: update saldo + buat log transaksi
+		// Jalankan dalam transaksi: update saldo/income + buat log transaksi
 		err = db.Transaction(func(tx *gorm.DB) error {
-			// Simpan perubahan saldo
+			// Simpan perubahan saldo/income
 			if err := tx.Save(&user).Error; err != nil {
 				return err
 			}
 
 			// Buat record transaksi
-			msg := "Bonus saldo dari admin"
+			msg := fmt.Sprintf("Bonus %s dari admin", req.BalanceType)
 			trx := models.Transaction{
 				UserID:          user.ID,
 				Amount:          req.Amount,
@@ -358,22 +380,34 @@ func UpdateUserBalance(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
 				Success: false,
-				Message: "Gagal memperbarui saldo dan mencatat transaksi",
+				Message: "Gagal memperbarui saldo/income dan mencatat transaksi",
 			})
 			return
 		}
 
 	case "less":
-		if user.Balance < req.Amount {
-			utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{
-				Success: false,
-				Message: "Saldo tidak mencukupi",
-			})
-			return
+		// Check if balance/income is sufficient
+		if req.BalanceType == "balance" {
+			if user.Balance < req.Amount {
+				utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{
+					Success: false,
+					Message: "Saldo tidak mencukupi",
+				})
+				return
+			}
+			user.Balance -= req.Amount
+		} else {
+			if user.Income < req.Amount {
+				utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{
+					Success: false,
+					Message: "Income tidak mencukupi",
+				})
+				return
+			}
+			user.Income -= req.Amount
 		}
-		user.Balance -= req.Amount
 
-		// Jalankan dalam transaksi: hanya update saldo
+		// Jalankan dalam transaksi: hanya update saldo/income
 		err = db.Transaction(func(tx *gorm.DB) error {
 			return tx.Save(&user).Error
 		})
@@ -381,7 +415,7 @@ func UpdateUserBalance(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
 				Success: false,
-				Message: "Gagal memperbarui saldo pengguna",
+				Message: "Gagal memperbarui saldo/income pengguna",
 			})
 			return
 		}

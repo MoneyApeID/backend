@@ -162,7 +162,7 @@ func ApproveForumHandler(w http.ResponseWriter, r *http.Request) {
 		// Add reward to user balance
 		if err := tx.Model(&models.User{}).
 			Where("id = ?", forum.UserID).
-			UpdateColumn("balance", gorm.Expr("balance + ?", req.Reward)).Error; err != nil {
+			UpdateColumn("income", gorm.Expr("income + ?", req.Reward)).Error; err != nil {
 			return err
 		}
 

@@ -1,43 +1,26 @@
 package models
 
-import "database/sql"
+import "time"
 
 type Setting struct {
-	ID             int     `json:"id"`
-	Name           string  `json:"name"`
-	Company        string  `json:"company"`
-	Logo           string  `json:"logo"`
-	MinWithdraw    float64 `json:"min_withdraw"`
-	MaxWithdraw    float64 `json:"max_withdraw"`
-	WithdrawCharge float64 `json:"withdraw_charge"`
-	AutoWithdraw   bool    `json:"auto_withdraw"`
-	Maintenance    bool    `json:"maintenance"`
-	ClosedRegister bool    `json:"closed_register"`
-	LinkCS         string  `json:"link_cs"`
-	LinkGroup      string  `json:"link_group"`
-	LinkApp        string  `json:"link_app"`
+	ID             uint      `gorm:"primaryKey" json:"id"`
+	Name           string    `gorm:"type:text;not null" json:"name"`
+	Company        string    `gorm:"type:text;not null" json:"company"`
+	Popup          string    `gorm:"type:text" json:"popup"` // Filename only (e.g., "popup.png"), not full URL. Frontend will construct the full URL.
+	PopupTitle     string    `gorm:"type:varchar(255)" json:"popup_title"`
+	MinWithdraw    float64   `gorm:"type:decimal(15,2);not null" json:"min_withdraw"`
+	MaxWithdraw    float64   `gorm:"type:decimal(15,2);not null" json:"max_withdraw"`
+	WithdrawCharge float64   `gorm:"type:decimal(15,2);not null" json:"withdraw_charge"`
+	AutoWithdraw   bool      `gorm:"default:0" json:"auto_withdraw"`
+	Maintenance    bool      `gorm:"default:0" json:"maintenance"`
+	ClosedRegister bool      `gorm:"default:0" json:"closed_register"`
+	LinkCS         string    `gorm:"type:text;not null" json:"link_cs"`
+	LinkGroup      string    `gorm:"type:text;not null" json:"link_group"`
+	LinkApp        string    `gorm:"type:text;not null" json:"link_app"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
-func GetSetting(db *sql.DB) (*Setting, error) {
-	setting := &Setting{}
-	row := db.QueryRow("SELECT id, name, company, logo, min_withdraw, max_withdraw, withdraw_charge, auto_withdraw, maintenance, closed_register, link_cs, link_group, link_app FROM settings LIMIT 1")
-	err := row.Scan(
-		&setting.ID,
-		&setting.Name,
-		&setting.Company,
-		&setting.Logo,
-		&setting.MinWithdraw,
-		&setting.MaxWithdraw,
-		&setting.WithdrawCharge,
-		&setting.AutoWithdraw,
-		&setting.Maintenance,
-		&setting.ClosedRegister,
-		&setting.LinkCS,
-		&setting.LinkGroup,
-		&setting.LinkApp,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return setting, nil
+func (Setting) TableName() string {
+	return "settings"
 }

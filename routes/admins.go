@@ -97,4 +97,27 @@ func SetAdminRoutes(api *mux.Router) {
 	// Settings management
 	adminRouter.Handle("/settings", http.HandlerFunc(admins.GetSettingsHandler)).Methods(http.MethodGet)
 	adminRouter.Handle("/settings", http.HandlerFunc(admins.UpdateSettingsHandler)).Methods(http.MethodPut)
+
+	// Tutorial management
+	adminRouter.Handle("/tutorials", http.HandlerFunc(admins.CreateTutorialHandler)).Methods(http.MethodPost)
+	adminRouter.Handle("/tutorials", http.HandlerFunc(admins.ListTutorialsHandler)).Methods(http.MethodGet)
+	adminRouter.Handle("/tutorials", http.HandlerFunc(admins.UpdateTutorialHandler)).Methods(http.MethodPut)
+	adminRouter.Handle("/tutorials/{id:[0-9]+}", http.HandlerFunc(admins.DeleteTutorialHandler)).Methods(http.MethodDelete)
+
+	// Binary system management
+	adminRouter.Handle("/binary", http.HandlerFunc(admins.GetBinaryStructureAdminHandler)).Methods(http.MethodGet)
+	adminRouter.Handle("/binary/details/{id:[0-9]+}", http.HandlerFunc(admins.GetBinaryDetailsAdminHandler)).Methods(http.MethodGet)
+	adminRouter.Handle("/binary/claim", http.HandlerFunc(admins.ClaimRewardAdminHandler)).Methods(http.MethodPost)
+	adminRouter.Handle("/binary/rewards", http.HandlerFunc(admins.GetBinaryRewardsAdminHandler)).Methods(http.MethodGet)
+
+	// Reward management
+	adminRouter.Handle("/rewards", http.HandlerFunc(admins.ListRewardsHandler)).Methods(http.MethodGet)
+	adminRouter.Handle("/rewards", http.HandlerFunc(admins.CreateRewardHandler)).Methods(http.MethodPost)
+	adminRouter.Handle("/rewards", http.HandlerFunc(admins.UpdateRewardHandler)).Methods(http.MethodPut)
+	adminRouter.Handle("/rewards/{id:[0-9]+}", http.HandlerFunc(admins.DeleteRewardHandler)).Methods(http.MethodDelete)
+
+	// Deposit management
+	adminRouter.Handle("/deposits", http.HandlerFunc(admins.GetDeposits)).Methods(http.MethodGet)
+	adminRouter.Handle("/deposits/{id:[0-9]+}/approve", http.HandlerFunc(admins.ApproveDeposit)).Methods(http.MethodPut)
+	adminRouter.Handle("/deposits/{id:[0-9]+}/reject", http.HandlerFunc(admins.RejectDeposit)).Methods(http.MethodPut)
 }

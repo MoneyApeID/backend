@@ -200,25 +200,15 @@ func CreateInvestmentHandler(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 
-		isLockedCategory := false
-		if product.Category != nil && strings.EqualFold(product.Category.ProfitType, "locked") {
-			isLockedCategory = true
-		}
-
-        newBalance := round3(userForUpdate.Balance - product.Amount)
+		newBalance := round3(userForUpdate.Balance - product.Amount)
 		finalBalance = newBalance
 		newTotalInvest := round3(userForUpdate.TotalInvest + product.Amount)
-		newTotalInvestVIP := userForUpdate.TotalInvestVIP
 		updateFields := map[string]interface{}{
 			"balance":            newBalance,
 			"total_invest":       newTotalInvest,
+			"total_invest_vip":   newTotalInvest,
 			"investment_status":  "Active",
 			"updated_at":         time.Now(),
-		}
-
-		if isLockedCategory {
-			newTotalInvestVIP = round3(userForUpdate.TotalInvestVIP + product.Amount)
-			updateFields["total_invest_vip"] = newTotalInvestVIP
 		}
 
 		if err := tx.Model(&models.User{}).Where("id = ?", uid).Updates(updateFields).Error; err != nil {
@@ -226,16 +216,20 @@ func CreateInvestmentHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Update VIP level if needed for locked category
-		if isLockedCategory {
-			newLevel := calculateVIPLevel(newTotalInvestVIP)
-			if userForUpdate.Level == nil || *userForUpdate.Level != newLevel {
-				if err := tx.Model(&models.User{}).Where("id = ?", uid).Update("level", newLevel).Error; err != nil {
-					return err
-				}
+		newLevel := calculateVIPLevel(newTotalInvest)
+		if userForUpdate.Level == nil || *userForUpdate.Level != newLevel {
+			if err := tx.Model(&models.User{}).Where("id = ?", uid).Update("level", newLevel).Error; err != nil {
+				return err
 			}
 		}
 
-		msg := fmt.Sprintf("Investasi %s", product.Name)
+		// Initialize reward progress jika user baru memiliki investasi aktif
+		if userForUpdate.InvestmentStatus == "Inactive" {
+			// User baru aktif, initialize reward progress
+			// Note: Ini dilakukan setelah transaction commit
+		}
+		
+		msg := fmt.Sprintf("Berhasil melakukan investasi pada produk %s", product.Name)
 		trx := models.Transaction{
 			UserID:          uid,
 			Amount:          product.Amount,
@@ -250,33 +244,53 @@ func CreateInvestmentHandler(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 
+		// Bonus 15% untuk user yang membeli investasi (dalam bentuk Income)
+		purchaseBonus := round3(product.Amount * 0.15)
+		if err := tx.Model(&models.User{}).Where("id = ?", uid).UpdateColumn("income", gorm.Expr("income + ?", purchaseBonus)).Error; err != nil {
+			return err
+		}
+		msgBonus := fmt.Sprintf("Bonus pembelian investasi produk %s", product.Name)
+		bonusTrx := models.Transaction{
+			UserID:          uid,
+			Amount:          purchaseBonus,
+			Charge:          0,
+			OrderID:         utils.GenerateOrderID(uid),
+			TransactionFlow: "debit",
+			TransactionType: "investment",
+			Message:         &msgBonus,
+			Status:          "Success",
+		}
+		if err := tx.Create(&bonusTrx).Error; err != nil {
+			return err
+		}
+
 		// Handle referral bonus (level 1)
 		if userForUpdate.ReffBy != nil {
-			var refUser models.User
-			if err := tx.Select("id, spin_ticket, balance").Where("id = ?", *userForUpdate.ReffBy).First(&refUser).Error; err == nil {
+			var refUser1 models.User
+			if err := tx.Select("id, spin_ticket, income").Where("id = ?", *userForUpdate.ReffBy).First(&refUser1).Error; err == nil {
 				if product.Amount >= 100000 {
-					if refUser.SpinTicket == nil {
+					if refUser1.SpinTicket == nil {
 						one := uint(1)
-						if err := tx.Model(&models.User{}).Where("id = ?", refUser.ID).Update("spin_ticket", one).Error; err != nil {
+						if err := tx.Model(&models.User{}).Where("id = ?", refUser1.ID).Update("spin_ticket", one).Error; err != nil {
 							return err
 						}
 					} else {
-						if err := tx.Model(&models.User{}).Where("id = ?", refUser.ID).UpdateColumn("spin_ticket", gorm.Expr("spin_ticket + ?", 1)).Error; err != nil {
+						if err := tx.Model(&models.User{}).Where("id = ?", refUser1.ID).UpdateColumn("spin_ticket", gorm.Expr("spin_ticket + ?", 1)).Error; err != nil {
 							return err
 						}
 					}
 				}
 
-				bonus := round3(product.Amount * 0.30)
-				if err := tx.Model(&models.User{}).Where("id = ?", refUser.ID).UpdateColumn("balance", gorm.Expr("balance + ?", bonus)).Error; err != nil {
+				bonus := round3(product.Amount * 0.15)
+				if err := tx.Model(&models.User{}).Where("id = ?", refUser1.ID).UpdateColumn("income", gorm.Expr("income + ?", bonus)).Error; err != nil {
 					return err
 				}
-				msgBonus := "Bonus rekomendasi investor"
+				msgBonus := "Bonus Rujukan (Sponsor Bonus) Level 1"
 				refTrx := models.Transaction{
-					UserID:          refUser.ID,
+					UserID:          refUser1.ID,
 					Amount:          bonus,
 					Charge:          0,
-					OrderID:         utils.GenerateOrderID(refUser.ID),
+					OrderID:         utils.GenerateOrderID(refUser1.ID),
 					TransactionFlow: "debit",
 					TransactionType: "team",
 					Message:         &msgBonus,
@@ -284,6 +298,56 @@ func CreateInvestmentHandler(w http.ResponseWriter, r *http.Request) {
 				}
 				if err := tx.Create(&refTrx).Error; err != nil {
 					return err
+				}
+
+				// Level 2: inviter of level 1
+				if refUser1.ReffBy != nil {
+					var refUser2 models.User
+					if err := tx.Select("id, reff_by").Where("id = ?", *refUser1.ReffBy).First(&refUser2).Error; err == nil {
+						bonus2 := round3(product.Amount * 0.02)
+						if err := tx.Model(&models.User{}).Where("id = ?", refUser2.ID).UpdateColumn("income", gorm.Expr("income + ?", bonus2)).Error; err != nil {
+							return err
+						}
+						msg2 := "Bonus Rujukan (Sponsor Bonus) Level 2"
+						refTrx2 := models.Transaction{
+							UserID:          refUser2.ID,
+							Amount:          bonus2,
+							Charge:          0,
+							OrderID:         utils.GenerateOrderID(refUser2.ID),
+							TransactionFlow: "debit",
+							TransactionType: "team",
+							Message:         &msg2,
+							Status:          "Success",
+						}
+						if err := tx.Create(&refTrx2).Error; err != nil {
+							return err
+						}
+
+						// Level 3: inviter of level 2
+						if refUser2.ReffBy != nil {
+							var refUser3 models.User
+							if err := tx.Select("id").Where("id = ?", *refUser2.ReffBy).First(&refUser3).Error; err == nil {
+								bonus3 := round3(product.Amount * 0.01)
+								if err := tx.Model(&models.User{}).Where("id = ?", refUser3.ID).UpdateColumn("income", gorm.Expr("income + ?", bonus3)).Error; err != nil {
+									return err
+								}
+								msg3 := "Bonus Rujukan (Sponsor Bonus) Level 3"
+								refTrx3 := models.Transaction{
+									UserID:          refUser3.ID,
+									Amount:          bonus3,
+									Charge:          0,
+									OrderID:         utils.GenerateOrderID(refUser3.ID),
+									TransactionFlow: "debit",
+									TransactionType: "team",
+									Message:         &msg3,
+									Status:          "Success",
+								}
+								if err := tx.Create(&refTrx3).Error; err != nil {
+									return err
+								}
+							}
+						}
+					}
 				}
 			}
 		}
@@ -296,6 +360,22 @@ func CreateInvestmentHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "Gagal membuat investasi"})
 		return
+	}
+
+	// Initialize reward progress jika user baru memiliki investasi aktif (setelah transaction commit)
+	var updatedUser models.User
+	if err := db.Select("investment_status").Where("id = ?", uid).First(&updatedUser).Error; err == nil {
+		if updatedUser.InvestmentStatus == "Active" {
+			// Initialize reward progress untuk user ini
+			_ = utils.InitializeRewardProgress(uid)
+			// Update reward progress untuk user ini
+			_ = utils.UpdateRewardProgress(uid)
+
+			// Update reward progress untuk semua upline yang terpengaruh (level 1-3)
+			if err := updateUplineRewardProgress(uid, db); err != nil {
+				// Log error but don't fail the request
+			}
+		}
 	}
 
 	resp := map[string]interface{}{
@@ -394,7 +474,7 @@ func CronDailyReturnsHandler(w http.ResponseWriter, r *http.Request) {
 	processed := 0
 	for i := range due {
 		inv := due[i]
-		_ = db.Transaction(func(tx *gorm.DB) error {
+		err := db.Transaction(func(tx *gorm.DB) error {
 			var user models.User
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, inv.UserID).Error; err != nil {
 				return err
@@ -418,13 +498,13 @@ func CronDailyReturnsHandler(w http.ResponseWriter, r *http.Request) {
 			// For locked (Monitor) category: Don't pay to balance until completion, just accumulate
 			// For unlocked (Insight/AutoPilot): Pay to balance immediately
 			if category.ProfitType == "unlocked" {
-				newBalance := round3(user.Balance + amount)
-				if err := tx.Model(&user).Update("balance", newBalance).Error; err != nil {
+				newBalance := round3(user.Income + amount)
+				if err := tx.Model(&user).Update("income", newBalance).Error; err != nil {
 					return err
 				}
 
 				orderID := utils.GenerateOrderID(inv.UserID)
-				msg := fmt.Sprintf("Profit investasi produk %s", product.Name)
+				msg := fmt.Sprintf("Pengembalian profit investasi produk %s", product.Name)
 				trx := models.Transaction{
 					UserID:          inv.UserID,
 					Amount:          amount,
@@ -443,13 +523,13 @@ func CronDailyReturnsHandler(w http.ResponseWriter, r *http.Request) {
 			// For locked (Monitor): If completing, pay total accumulated profit
 			if category.ProfitType == "locked" && paid >= inv.Duration {
 				totalProfit := round3(inv.DailyProfit * float64(inv.Duration))
-				newBalance := round3(user.Balance + totalProfit)
-				if err := tx.Model(&user).Update("balance", newBalance).Error; err != nil {
+				newBalance := round3(user.Income + totalProfit)
+				if err := tx.Model(&user).Update("income", newBalance).Error; err != nil {
 					return err
 				}
 
 				orderID := utils.GenerateOrderID(inv.UserID)
-				msg := fmt.Sprintf("Total profit investasi produk %s selesai", product.Name)
+				msg := fmt.Sprintf("Pengembalian profit investasi produk %s selesai", product.Name)
 				trx := models.Transaction{
 					UserID:          inv.UserID,
 					Amount:          totalProfit,
@@ -465,34 +545,49 @@ func CronDailyReturnsHandler(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			// NO TEAM BONUSES - removed completely
+			// Bonus manajemen tim level 1, 2, 3
+			levelPercents := []float64{0.03, 0.03, 0.03}
+			levelMsgs := []string{
+				"Bonus Rebat Kedalaman Jaringan Level 1",
+				"Bonus Rebat Kedalaman Jaringan Level 2",
+				"Bonus Rebat Kedalaman Jaringan Level 3",
+			}
+			currReffBy := user.ReffBy
+			for level := 0; level < 3 && currReffBy != nil; level++ {
+				var reffUser models.User
+				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id, income, reff_by, level").Where("id = ?", *currReffBy).First(&reffUser).Error; err != nil {
+					break // stop if not found
+				}
+				bonus := round3(amount * levelPercents[level])
+				if bonus > 0 {
+					newReffBalance := round3(reffUser.Income + bonus)
+					if err := tx.Model(&reffUser).Update("income", newReffBalance).Error; err != nil {
+						return err
+					}
+					orderID := utils.GenerateOrderID(reffUser.ID)
+					msg := levelMsgs[level]
+					trxBonus := models.Transaction{
+						UserID:          reffUser.ID,
+						Amount:          bonus,
+						Charge:          0,
+						OrderID:         orderID,
+						TransactionFlow: "debit",
+						TransactionType: "team",
+						Message:         &msg,
+						Status:          "Success",
+					}
+					if err := tx.Create(&trxBonus).Error; err != nil {
+						return err
+					}
+				}
+				currReffBy = reffUser.ReffBy
+			}
 
 			nowTime := time.Now()
 			nextTime := nowTime.Add(24 * time.Hour)
 			updates := map[string]interface{}{"total_paid": paid, "total_returned": returned, "last_return_at": nowTime, "next_return_at": nextTime}
 			if paid >= inv.Duration {
 				updates["status"] = "Completed"
-
-				newBalance := round3(user.Balance + inv.Amount)
-				if err := tx.Model(&user).Update("balance", newBalance).Error; err != nil {
-					return err
-				}
-
-				orderID := utils.GenerateOrderID(inv.UserID)
-				msg := fmt.Sprintf("Pengembalian modal investasi produk %s", product.Name)
-				trx := models.Transaction{
-					UserID:          inv.UserID,
-					Amount:          inv.Amount,
-					Charge:          0,
-					OrderID:         orderID,
-					TransactionFlow: "debit",
-					TransactionType: "return",
-					Message:         &msg,
-					Status:          "Success",
-				}
-				if err := tx.Create(&trx).Error; err != nil {
-					return err
-				}
 			}
 			if err := tx.Model(&inv).Updates(updates).Error; err != nil {
 				return err
@@ -500,6 +595,14 @@ func CronDailyReturnsHandler(w http.ResponseWriter, r *http.Request) {
 			processed++
 			return nil
 		})
+
+		// Update reward progress setelah transaction commit (jika berhasil)
+		if err == nil {
+			// Update reward progress untuk user yang investasinya di-update
+			_ = utils.UpdateRewardProgress(inv.UserID)
+			// Update reward progress untuk semua upline yang terpengaruh
+			_ = updateUplineRewardProgress(inv.UserID, db)
+		}
 	}
 	utils.WriteJSON(w, http.StatusOK, utils.APIResponse{Success: true, Message: "Cron executed", Data: map[string]interface{}{"processed": processed}})
 }
@@ -508,19 +611,53 @@ func round3(f float64) float64 {
 	return float64(int(f*100+0.5)) / 100
 }
 
-// calculateVIPLevel determines VIP level based on total locked category investments
-// VIP1: 50k, VIP2: 1.2M, VIP3: 7M, VIP4: 30M, VIP5: 150M
-func calculateVIPLevel(totalInvestVIP float64) uint {
-	if totalInvestVIP >= 150000000 {
-		return 5
-	} else if totalInvestVIP >= 30000000 {
-		return 4
-	} else if totalInvestVIP >= 7000000 {
-		return 3
-	} else if totalInvestVIP >= 1200000 {
-		return 2
-	} else if totalInvestVIP >= 50000 {
-		return 1
+// updateUplineRewardProgress mengupdate reward progress untuk semua upline yang terpengaruh
+// Upline yang terpengaruh adalah yang memiliki user ini di binary tree mereka (level 1-3)
+func updateUplineRewardProgress(userID uint, db *gorm.DB) error {
+	// Cari semua upline yang memiliki user ini di binary tree mereka
+	// Kita perlu traverse ke atas untuk menemukan semua upline yang terpengaruh
+
+	// Get user's referral chain (up to 3 levels)
+	var user models.User
+	if err := db.Select("reff_by").Where("id = ?", userID).First(&user).Error; err != nil {
+		return err
 	}
-	return 0
+
+	// Collect all uplines (up to 3 levels)
+	uplineIDs := make([]uint, 0)
+	currentReffBy := user.ReffBy
+	level := 0
+	for currentReffBy != nil && level < 3 {
+		uplineIDs = append(uplineIDs, *currentReffBy)
+		var upline models.User
+		if err := db.Select("reff_by").Where("id = ?", *currentReffBy).First(&upline).Error; err != nil {
+			break
+		}
+		currentReffBy = upline.ReffBy
+		level++
+	}
+
+	// Update reward progress for each upline
+	for _, uplineID := range uplineIDs {
+		// Check if upline has active investment
+		var upline models.User
+		if err := db.Select("investment_status").Where("id = ?", uplineID).First(&upline).Error; err != nil {
+			continue
+		}
+		if upline.InvestmentStatus != "Active" {
+			continue
+		}
+
+		// Update reward progress
+		_ = utils.UpdateRewardProgress(uplineID)
+	}
+
+	return nil
+}
+
+func calculateVIPLevel(totalInvestVIP float64) uint {
+	if totalInvestVIP >= 10000 {
+		return 2
+	}
+	return 1
 }

@@ -7,6 +7,7 @@ import (
 	"mime"
 	"os"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -119,4 +120,72 @@ func UploadToS3AndPresign(objectName string, file io.ReadSeeker, fileSize int64,
 	}
 
 	return url, nil
+}
+
+// UploadToS3Server uploads a file to S3_BUCKET_SERVER and returns the full URL
+func UploadToS3Server(objectName string, file io.Reader, fileSize int64) (string, error) {
+	bucket := os.Getenv("S3_BUCKET_SERVER")
+	if bucket == "" {
+		return "", fmt.Errorf("S3_BUCKET_SERVER not set in environment")
+	}
+
+	cfg, err := getS3Config()
+	if err != nil {
+		return "", err
+	}
+
+	client := s3.NewFromConfig(cfg)
+
+	contentType := mime.TypeByExtension(path.Ext(objectName))
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
+	_, err = client.PutObject(context.TODO(), &s3.PutObjectInput{
+		Bucket:      aws.String(bucket),
+		Key:         aws.String(objectName),
+		Body:        file,
+		ContentType: aws.String(contentType),
+	})
+	if err != nil {
+		return "", fmt.Errorf("S3 upload failed: %w", err)
+	}
+
+	// Construct public URL (assuming S3_BUCKET_SERVER is public or has CloudFront)
+	s3Region := os.Getenv("S3_REGION")
+	if s3Region == "" {
+		s3Region = "ap-southeast-1"
+	}
+	// Format: https://bucket-name.s3.region.amazonaws.com/key
+	// Or if using custom domain, use S3_BASE_URL if available
+	baseURL := os.Getenv("S3_BASE_URL")
+	if baseURL != "" {
+		return fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), objectName), nil
+	}
+	return fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", bucket, s3Region, objectName), nil
+}
+
+// DeleteFromS3 deletes a file from S3_BUCKET_SERVER
+func DeleteFromS3Server(objectName string) error {
+	bucket := os.Getenv("S3_BUCKET_SERVER")
+	if bucket == "" {
+		return fmt.Errorf("S3_BUCKET_SERVER not set in environment")
+	}
+
+	cfg, err := getS3Config()
+	if err != nil {
+		return err
+	}
+
+	client := s3.NewFromConfig(cfg)
+
+	_, err = client.DeleteObject(context.TODO(), &s3.DeleteObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(objectName),
+	})
+	if err != nil {
+		return fmt.Errorf("S3 delete failed: %w", err)
+	}
+
+	return nil
 }

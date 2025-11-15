@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -75,7 +76,7 @@ func CreateDepositHandler(w http.ResponseWriter, r *http.Request) {
 
 	amount := utils.RoundFloat(req.Amount, 2)
 	if amount <= 0 {
-		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "Jumlah deposit tidak valid"})
+		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "Jumlah isi ulang tidak valid"})
 		return
 	}
 
@@ -128,7 +129,7 @@ func CreateDepositHandler(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := callLinkQu(linkQuConfig, endpoint, body)
 	if err != nil {
-		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: err.Error()})
+		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "Terjadi kesalahan pada sisi pembayaran, Tim kami akan segera menangani masalah tersebut"})
 		return
 	}
 
@@ -144,7 +145,7 @@ func CreateDepositHandler(w http.ResponseWriter, r *http.Request) {
 		paymentCode = strings.TrimSpace(resp.VirtualAccount)
 	}
 	if paymentCode == "" {
-		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "Kode pembayaran tidak tersedia"})
+		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "Terjadi kesalahan pada sisi pembayaran, Tim kami akan segera menangani masalah tersebut"})
 		return
 	}
 
@@ -161,8 +162,31 @@ func CreateDepositHandler(w http.ResponseWriter, r *http.Request) {
 		deposit.PaymentChannel = &channel
 	}
 
-	if err := db.Create(&deposit).Error; err != nil {
-		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "Gagal membuat deposit"})
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		// Create deposit
+		if err := tx.Create(&deposit).Error; err != nil {
+			return err
+		}
+
+		// Create transaction dengan status Pending
+		message := "Isi Ulang saldo menggunakan " + method
+		trx := models.Transaction{
+			UserID:          uid,
+			Amount:          amount,
+			Charge:          0,
+			OrderID:         orderID,
+			TransactionFlow: "debit",
+			TransactionType: "deposit",
+			Message:         &message,
+			Status:          "Pending",
+		}
+		if err := tx.Create(&trx).Error; err != nil {
+			return err
+		}
+
+		return nil
+	}); err != nil {
+		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "Gagal membuat pembayaran"})
 		return
 	}
 
@@ -184,7 +208,7 @@ func CreateDepositHandler(w http.ResponseWriter, r *http.Request) {
 		responseData["image_qris"] = resp.ImageQRIS
 	}
 
-	utils.WriteJSON(w, http.StatusCreated, utils.APIResponse{Success: true, Message: "Deposit berhasil dibuat", Data: responseData})
+	utils.WriteJSON(w, http.StatusCreated, utils.APIResponse{Success: true, Message: "Isi ulang berhasil dibuat", Data: responseData})
 }
 
 // GET /api/users/payment/{order_id}
@@ -209,7 +233,7 @@ func GetDepositDetailsHandler(w http.ResponseWriter, r *http.Request) {
 	var deposit models.Deposit
 	if err := db.Where("order_id = ? AND user_id = ?", orderID, uid).First(&deposit).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			utils.WriteJSON(w, http.StatusNotFound, utils.APIResponse{Success: false, Message: "Data deposit tidak ditemukan"})
+			utils.WriteJSON(w, http.StatusNotFound, utils.APIResponse{Success: false, Message: "Data isi ulang tidak ditemukan"})
 			return
 		}
 		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "Terjadi kesalahan"})
@@ -238,8 +262,94 @@ func GetDepositDetailsHandler(w http.ResponseWriter, r *http.Request) {
 	utils.WriteJSON(w, http.StatusOK, utils.APIResponse{Success: true, Message: "Successfully", Data: resp})
 }
 
+// GET /api/users/deposits
+func ListDepositsHandler(w http.ResponseWriter, r *http.Request) {
+	uid, ok := utils.GetUserID(r)
+	if !ok || uid == 0 {
+		utils.WriteJSON(w, http.StatusUnauthorized, utils.APIResponse{Success: false, Message: "Unauthorized"})
+		return
+	}
+
+	// Pagination: page + limit
+	pageStr := r.URL.Query().Get("page")
+	limitStr := r.URL.Query().Get("limit")
+	page, _ := strconv.Atoi(pageStr)
+	if page < 1 {
+		page = 1
+	}
+	limit, _ := strconv.Atoi(limitStr)
+	if limit < 1 || limit > 50 {
+		limit = 25
+	}
+	offset := (page - 1) * limit
+
+	// Optional status filter
+	status := strings.TrimSpace(r.URL.Query().Get("status"))
+
+	db := database.DB
+	var deposits []models.Deposit
+	query := db.Where("user_id = ?", uid)
+	if status != "" {
+		query = query.Where("status = ?", status)
+	}
+	if err := query.Order("id DESC").Limit(limit).Offset(offset).Find(&deposits).Error; err != nil {
+		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "Terjadi kesalahan"})
+		return
+	}
+
+	// Map deposits to response format
+	type depositDTO struct {
+		ID            uint    `json:"id"`
+		OrderID       string  `json:"order_id"`
+		Amount        float64 `json:"amount"`
+		PaymentMethod string  `json:"payment_method"`
+		PaymentChannel *string `json:"payment_channel,omitempty"`
+		Status        string  `json:"status"`
+		ExpiredAt     string  `json:"expired_at"`
+		CreatedAt     string  `json:"created_at"`
+		UpdatedAt     string  `json:"updated_at"`
+	}
+
+	items := make([]depositDTO, 0, len(deposits))
+	for _, d := range deposits {
+		items = append(items, depositDTO{
+			ID:            d.ID,
+			OrderID:       d.OrderID,
+			Amount:        d.Amount,
+			PaymentMethod: d.PaymentMethod,
+			PaymentChannel: d.PaymentChannel,
+			Status:        d.Status,
+			ExpiredAt:     d.ExpiredAt.UTC().Format(time.RFC3339),
+			CreatedAt:     d.CreatedAt.UTC().Format(time.RFC3339),
+			UpdatedAt:     d.UpdatedAt.UTC().Format(time.RFC3339),
+		})
+	}
+
+	utils.WriteJSON(w, http.StatusOK, utils.APIResponse{
+		Success: true,
+		Message: "Successfully",
+		Data:    map[string]interface{}{"deposits": items},
+	})
+}
+
 // POST /api/payments/linkqu/callback
 func LinkQuCallbackHandler(w http.ResponseWriter, r *http.Request) {
+	// Validasi header client-id dan client-secret
+	headerClientID := strings.TrimSpace(r.Header.Get("client-id"))
+	headerClientSecret := strings.TrimSpace(r.Header.Get("client-secret"))
+	envClientID := strings.TrimSpace(os.Getenv("LINKQU_CLIENT_ID"))
+	envClientSecret := strings.TrimSpace(os.Getenv("LINKQU_CLIENT_SECRET"))
+
+	if headerClientID == "" || headerClientSecret == "" {
+		utils.WriteJSON(w, http.StatusUnauthorized, utils.APIResponse{Success: false, Message: "Missing client-id or client-secret header"})
+		return
+	}
+
+	if headerClientID != envClientID || headerClientSecret != envClientSecret {
+		utils.WriteJSON(w, http.StatusUnauthorized, utils.APIResponse{Success: false, Message: "Invalid client-id or client-secret"})
+		return
+	}
+
 	var payload map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "Invalid JSON"})
@@ -248,16 +358,11 @@ func LinkQuCallbackHandler(w http.ResponseWriter, r *http.Request) {
 
 	partnerReff := strings.TrimSpace(getString(payload, "partner_reff"))
 	status := strings.ToUpper(strings.TrimSpace(getString(payload, "status")))
-	responseCode := strings.TrimSpace(getString(payload, "response_code"))
-	virtualAccount := strings.TrimSpace(getString(payload, "virtual_account"))
-	qrisText := strings.TrimSpace(getString(payload, "qris_text"))
 
 	if partnerReff == "" {
 		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "partner_reff kosong"})
 		return
 	}
-
-	success := responseCode == "00" && (status == "SUCCESS" || status == "PAID" || status == "COMPLETED")
 
 	db := database.DB
 	var deposit models.Deposit
@@ -266,30 +371,32 @@ func LinkQuCallbackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if deposit.Status == "Success" {
-		utils.WriteJSON(w, http.StatusOK, utils.APIResponse{Success: true, Message: "OK"})
+	// Cek duplikasi: jika status sudah sama dengan yang dikirim, ignore
+	dbStatus := strings.ToUpper(deposit.Status)
+	if dbStatus == status {
+		utils.WriteJSON(w, http.StatusOK, utils.APIResponse{Success: true, Message: "Ignore"})
 		return
 	}
 
-	if success {
+	// Handle status SUCCESS (hanya proses jika deposit masih Pending)
+	if status == "SUCCESS" && deposit.Status == "Pending" {
 		if err := db.Transaction(func(tx *gorm.DB) error {
-			paymentCode := deposit.PaymentCode
-			if deposit.PaymentMethod == "QRIS" && qrisText != "" {
-				paymentCode = &qrisText
-			}
-			if deposit.PaymentMethod == "BANK" && virtualAccount != "" {
-				paymentCode = &virtualAccount
-			}
 
+			// Update deposit status
 			if err := tx.Model(&models.Deposit{}).Where("id = ?", deposit.ID).Updates(map[string]interface{}{
 				"status":       "Success",
-				"payment_code": paymentCode,
 			}).Error; err != nil {
 				return err
 			}
 
+			// Update transaction status (transaction sudah dibuat saat deposit dibuat)
+			if err := tx.Model(&models.Transaction{}).Where("order_id = ? AND transaction_type = ?", deposit.OrderID, "deposit").Update("status", "Success").Error; err != nil {
+				return err
+			}
+
+			// Update user balance
 			var user models.User
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", deposit.UserID).First(&user).Error; err != nil {
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id, balance, spin_ticket").Where("id = ?", deposit.UserID).First(&user).Error; err != nil {
 				return err
 			}
 
@@ -298,20 +405,28 @@ func LinkQuCallbackHandler(w http.ResponseWriter, r *http.Request) {
 				return err
 			}
 
-			message := "Deposit saldo via LinkQu"
-			trx := models.Transaction{
-				UserID:          user.ID,
-				Amount:          deposit.Amount,
-				Charge:          0,
-				OrderID:         deposit.OrderID,
-				TransactionFlow: "debit",
-				TransactionType: "deposit",
-				Message:         &message,
-				Status:          "Success",
+			// Bonus spin ticket berdasarkan jumlah deposit
+			// 100k-499k → 1 ticket, 500k+ → 2 tickets
+			if deposit.Amount >= 100000 {
+				var spinTicketsToAdd uint = 1
+				if deposit.Amount >= 500000 {
+					spinTicketsToAdd = 2
+				}
+
+				// Update spin ticket
+				if user.SpinTicket == nil {
+					// Jika spin_ticket masih nil, set langsung
+					if err := tx.Model(&models.User{}).Where("id = ?", user.ID).Update("spin_ticket", spinTicketsToAdd).Error; err != nil {
+						return err
+					}
+				} else {
+					// Jika sudah ada, tambahkan
+					if err := tx.Model(&models.User{}).Where("id = ?", user.ID).UpdateColumn("spin_ticket", gorm.Expr("spin_ticket + ?", spinTicketsToAdd)).Error; err != nil {
+						return err
+					}
+				}
 			}
-			if err := tx.Create(&trx).Error; err != nil {
-				return err
-			}
+
 			return nil
 		}); err != nil {
 			utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "Gagal memproses callback"})
@@ -322,7 +437,22 @@ func LinkQuCallbackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = db.Model(&models.Deposit{}).Where("id = ?", deposit.ID).Update("status", "Failed")
+	// Handle status FAILED
+	if status == "FAILED" {
+		if deposit.Status == "Pending" {
+			_ = db.Model(&models.Deposit{}).Where("id = ?", deposit.ID).Update("status", "Failed")
+		}
+		utils.WriteJSON(w, http.StatusOK, utils.APIResponse{Success: true, Message: "OK"})
+		return
+	}
+
+	// Handle status PENDING (tidak perlu update, biarkan tetap Pending)
+	if status == "PENDING" {
+		utils.WriteJSON(w, http.StatusOK, utils.APIResponse{Success: true, Message: "OK"})
+		return
+	}
+
+	// Status tidak dikenal atau tidak valid
 	utils.WriteJSON(w, http.StatusOK, utils.APIResponse{Success: true, Message: "Ignored"})
 }
 
@@ -393,7 +523,7 @@ func callLinkQu(cfg *linkQuConfig, endpoint string, body map[string]interface{})
 	if linkQuResp.ResponseCode != "00" {
 		desc := linkQuResp.ResponseDesc
 		if desc == "" {
-			desc = "Gagal membuat transaksi LinkQu"
+			desc = "Terjadi kesalahan pada sisi pembayaran, Tim kami akan segera menangani masalah tersebut"
 		}
 		return nil, errors.New(desc)
 	}

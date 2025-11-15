@@ -192,7 +192,7 @@ func UserSpinHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Get user and check spin_ticket
 	var user models.User
-	if err := db.Select("id, balance, spin_ticket").Where("id = ?", userID).First(&user).Error; err != nil {
+	if err := db.Select("id, income, spin_ticket").Where("id = ?", userID).First(&user).Error; err != nil {
 		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "Terjadi kesalahan data, silakan coba lagi"})
 		log.Println(err)
 		return
@@ -235,7 +235,7 @@ func UserSpinHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	previousBalance := user.Balance
+	previousBalance := user.Income
 	var currentBalance float64
 
 	err = db.Transaction(func(tx *gorm.DB) error {
@@ -259,8 +259,7 @@ func UserSpinHandler(w http.ResponseWriter, r *http.Request) {
 			Status:          "Success",
 		}
 		if err := tx.Create(&trx).Error; err != nil {
-			utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "Terjadi kesalahan sistem, silakan coba lagi"})
-			log.Println(err)
+			log.Println("Error creating transaction:", err)
 			return err
 		}
 
@@ -279,15 +278,15 @@ func UserSpinHandler(w http.ResponseWriter, r *http.Request) {
 		// Increase user's balance
 		if err := tx.Model(&models.User{}).
 			Where("id = ?", userID).
-			UpdateColumn("balance", gorm.Expr("balance + ?", finalPrize.Amount)).Error; err != nil {
+			UpdateColumn("income", gorm.Expr("income + ?", finalPrize.Amount)).Error; err != nil {
 			return err
 		}
 
 		// Read updated balance
-		if err := tx.Select("balance").Where("id = ?", userID).First(&user).Error; err != nil {
+		if err := tx.Select("income").Where("id = ?", userID).First(&user).Error; err != nil {
 			return err
 		}
-		currentBalance = user.Balance
+		currentBalance = user.Income
 		return nil
 	})
 

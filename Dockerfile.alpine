@@ -1,4 +1,5 @@
 # syntax=docker/dockerfile:1
+# Alternative Dockerfile using Alpine (more reliable if distroless registry is unavailable)
 
 # Build stage
 FROM golang:1.23-alpine AS builder
@@ -25,7 +26,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -a -installsuffix cgo \
     -o /app/server ./main.go
 
-# Runtime stage - use Alpine minimal (more reliable than distroless registries)
+# Runtime stage - use Alpine minimal for reliability
 FROM alpine:latest
 
 # Install only CA certificates and timezone data
@@ -53,3 +54,4 @@ USER appuser
 
 # Start the application
 ENTRYPOINT ["/app/server"]
+

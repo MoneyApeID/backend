@@ -35,13 +35,9 @@ func WithdrawalHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Load settings
-	sqlDB, err := database.DB.DB()
-	if err != nil {
-		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "Terjadi kesalahan sistem, silakan coba lagi"})
-		return
-	}
-	setting, err := models.GetSetting(sqlDB)
-	if err != nil {
+	db := database.DB
+	var setting models.Setting
+	if err := db.First(&setting).Error; err != nil {
 		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "Terjadi kesalahan sistem, silakan coba lagi"})
 		return
 	}
@@ -67,8 +63,6 @@ func WithdrawalHandler(w http.ResponseWriter, r *http.Request) {
 		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "Penarikan hanya dapat dilakukan pada hari Senin sampai Sabtu"})
 		return
 	}
-
-	db := database.DB
 
 	// Check if user has already made a withdrawal today
 	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
@@ -113,11 +107,11 @@ func WithdrawalHandler(w http.ResponseWriter, r *http.Request) {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, uid).Error; err != nil {
 			return err
 		}
-		if user.Balance < req.Amount {
+		if user.Income < req.Amount {
 			return errInsufficientBalance
 		}
-		newBalance := round2(user.Balance - req.Amount)
-		if err := tx.Model(&user).Update("balance", newBalance).Error; err != nil {
+		newBalance := round2(user.Income - req.Amount)
+		if err := tx.Model(&user).Update("income", newBalance).Error; err != nil {
 			return err
 		}
 

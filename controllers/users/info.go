@@ -33,7 +33,7 @@ func InfoHandler(w http.ResponseWriter, r *http.Request) {
 
 	var setting models.Setting
 	err := db.Model(&models.Setting{}).
-		Select("name, company, logo, min_withdraw, max_withdraw, withdraw_charge, link_cs, link_group, link_app").
+		Select("name, company, popup, popup_title, min_withdraw, max_withdraw, withdraw_charge, link_cs, link_group, link_app").
 		Take(&setting).Error
 	healthy := true
 	if err != nil {
@@ -65,7 +65,8 @@ func InfoHandler(w http.ResponseWriter, r *http.Request) {
 			"application": map[string]interface{}{
 				"name":            setting.Name,
 				"company":         setting.Company,
-				"logo":            setting.Logo,
+				"popup":           setting.Popup,
+				"popup_title":     setting.PopupTitle,
 				"min_withdraw":    int64(setting.MinWithdraw),
 				"max_withdraw":    int64(setting.MaxWithdraw),
 				"withdraw_charge": int64(setting.WithdrawCharge),

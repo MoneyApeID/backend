@@ -54,6 +54,9 @@ func InitRouter() *mux.Router {
 	// LinkQu payment callback (no auth, whitelist, sliding window)
 	api.Handle("/payments/linkqu/callback", webhookLimiter.Middleware(http.HandlerFunc(users.LinkQuCallbackHandler))).Methods(http.MethodPost)
 
+	// LinkQu payout callback (withdrawal)
+	api.Handle("/payouts/linkqu/callback", webhookLimiter.Middleware(http.HandlerFunc(admins.LinkQuPayoutCallbackHandler))).Methods(http.MethodPost)
+
 	api.Handle("/payouts/kyta/webhook", webhookLimiter.Middleware(http.HandlerFunc(admins.KytaPayoutWebhookHandler))).Methods(http.MethodPost)
 
 	// Example protected endpoint using JWT middleware

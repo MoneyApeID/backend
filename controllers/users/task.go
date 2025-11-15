@@ -192,7 +192,7 @@ func TaskSubmitHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Add reward to user balance
-	if err := db.Model(&models.User{}).Where("id = ?", uid).Update("balance", gorm.Expr("balance + ?", task.Reward)).Error; err != nil {
+	if err := db.Model(&models.User{}).Where("id = ?", uid).Update("income", gorm.Expr("income + ?", task.Reward)).Error; err != nil {
 		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "Failed to update balance"})
 		return
 	}

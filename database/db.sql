@@ -319,7 +319,8 @@ CREATE TABLE `settings` (
   `id` bigint UNSIGNED NOT NULL,
   `name` text NOT NULL,
   `company` text NOT NULL,
-  `logo` text NOT NULL,
+  `popup` text DEFAULT NULL,
+  `popup_title` varchar(255) DEFAULT NULL,
   `min_withdraw` decimal(15,2) NOT NULL,
   `max_withdraw` decimal(15,2) NOT NULL,
   `withdraw_charge` decimal(15,2) NOT NULL,
@@ -328,15 +329,17 @@ CREATE TABLE `settings` (
   `auto_withdraw` tinyint(1) NOT NULL DEFAULT '0',
   `link_cs` text NOT NULL,
   `link_group` text NOT NULL,
-  `link_app` text NOT NULL
+  `link_app` text NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 --
 -- Dumping data untuk tabel `settings`
 --
 
-INSERT INTO `settings` (`id`, `name`, `company`, `logo`, `min_withdraw`, `max_withdraw`, `withdraw_charge`, `maintenance`, `closed_register`, `auto_withdraw`, `link_cs`, `link_group`, `link_app`) VALUES
-(1, 'Vla Devs', 'Vla Devs', 'logo.png', 33000.00, 10000000.00, 10.00, 0, 0, 0, 'https://t.me/', 'https://t.me/', 'https://vladevs.com');
+INSERT INTO `settings` (`id`, `name`, `company`, `popup`, `popup_title`, `min_withdraw`, `max_withdraw`, `withdraw_charge`, `maintenance`, `closed_register`, `auto_withdraw`, `link_cs`, `link_group`, `link_app`) VALUES
+(1, 'Vla Devs', 'Vla Devs', NULL, NULL, 33000.00, 10000000.00, 10.00, 0, 0, 0, 'https://t.me/', 'https://t.me/', 'https://vladevs.com');
 
 -- --------------------------------------------------------
 
@@ -486,6 +489,22 @@ CREATE TABLE `user_spins` (
 -- --------------------------------------------------------
 
 --
+-- Struktur dari tabel `tutorials`
+--
+
+CREATE TABLE `tutorials` (
+  `id` int UNSIGNED NOT NULL,
+  `title` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `image` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `link` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `status` enum('Active','Inactive') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Active',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Struktur dari tabel `user_tasks`
 --
 
@@ -495,6 +514,61 @@ CREATE TABLE `user_tasks` (
   `task_id` int NOT NULL,
   `claimed_at` datetime DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Struktur dari tabel `binary_nodes`
+--
+
+CREATE TABLE `binary_nodes` (
+  `id` int UNSIGNED NOT NULL,
+  `user_id` int UNSIGNED NOT NULL,
+  `left_id` int UNSIGNED DEFAULT NULL COMMENT 'User ID di sisi kiri',
+  `right_id` int UNSIGNED DEFAULT NULL COMMENT 'User ID di sisi kanan',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Binary tree structure kiri-kanan';
+
+-- --------------------------------------------------------
+
+--
+-- Struktur dari tabel `rewards`
+--
+
+CREATE TABLE `rewards` (
+  `id` int UNSIGNED NOT NULL,
+  `name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `omset_target` decimal(15,2) NOT NULL COMMENT 'Target omset untuk mendapatkan reward',
+  `reward_desc` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT 'Deskripsi reward (untuk manual distribution)',
+  `duration` int NOT NULL COMMENT 'Durasi dalam hari',
+  `is_accumulative` tinyint(1) NOT NULL DEFAULT '0' COMMENT '1 = akumulasi, 0 = reset',
+  `status` enum('Active','Inactive') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Active',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Definisi reward yang tersedia';
+
+-- --------------------------------------------------------
+
+--
+-- Struktur dari tabel `reward_progress`
+--
+
+CREATE TABLE `reward_progress` (
+  `id` int UNSIGNED NOT NULL,
+  `user_id` int UNSIGNED NOT NULL,
+  `reward_id` int UNSIGNED NOT NULL,
+  `omset_left` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'Omset dari sisi kiri',
+  `omset_right` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'Omset dari sisi kanan',
+  `total_omset` decimal(15,2) NOT NULL DEFAULT '0.00' COMMENT 'Total omset (kiri + kanan)',
+  `is_completed` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'Apakah sudah mencapai target',
+  `is_claimed` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'Apakah sudah di-claim (manual)',
+  `started_at` datetime NOT NULL COMMENT 'Kapan periode dimulai',
+  `expires_at` datetime DEFAULT NULL COMMENT 'Kapan periode berakhir (untuk reset)',
+  `last_reset_at` datetime DEFAULT NULL COMMENT 'Kapan terakhir di-reset',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Progress reward untuk setiap user';
 
 -- --------------------------------------------------------
 
@@ -693,12 +767,45 @@ ALTER TABLE `user_spins`
   ADD KEY `fk_spins_prize` (`prize_id`);
 
 --
+-- Indeks untuk tabel `tutorials`
+--
+ALTER TABLE `tutorials`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_status` (`status`);
+
+--
 -- Indeks untuk tabel `user_tasks`
 --
 ALTER TABLE `user_tasks`
   ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `unique_user_task` (`user_id`,`task_id`),
   ADD KEY `task_id` (`task_id`);
+
+--
+-- Indeks untuk tabel `binary_nodes`
+--
+ALTER TABLE `binary_nodes`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `user_id` (`user_id`),
+  ADD KEY `left_id` (`left_id`),
+  ADD KEY `right_id` (`right_id`);
+
+--
+-- Indeks untuk tabel `rewards`
+--
+ALTER TABLE `rewards`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_status` (`status`);
+
+--
+-- Indeks untuk tabel `reward_progress`
+--
+ALTER TABLE `reward_progress`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_user_id` (`user_id`),
+  ADD KEY `idx_reward_id` (`reward_id`),
+  ADD KEY `idx_expires_at` (`expires_at`),
+  ADD KEY `idx_user_reward` (`user_id`,`reward_id`);
 
 --
 -- Indeks untuk tabel `withdrawals`
@@ -744,4 +851,112 @@ ALTER TABLE `deposits`
 -- AUTO_INCREMENT untuk tabel `investments`
 --
 ALTER TABLE `investments`
+  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT untuk tabel `tutorials`
+--
+ALTER TABLE `tutorials`
+  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT untuk tabel `binary_nodes`
+--
+ALTER TABLE `binary_nodes`
+  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT untuk tabel `rewards`
+--
+ALTER TABLE `rewards`
+  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT untuk tabel `reward_progress`
+--
+ALTER TABLE `reward_progress`
+  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT untuk tabel `transactions`
+--
+ALTER TABLE `transactions`
+  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT untuk tabel `user_spins`
+--
+ALTER TABLE `user_spins`
+  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT untuk tabel `users`
+--
+ALTER TABLE `users`
+  MODIFY `id` int NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT untuk tabel `banks`
+--
+ALTER TABLE `banks`
+  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT untuk tabel `forums`
+--
+ALTER TABLE `forums`
+  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT untuk tabel `payments`
+--
+ALTER TABLE `payments`
+  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT untuk tabel `payment_settings`
+--
+ALTER TABLE `payment_settings`
+  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT untuk tabel `products`
+--
+ALTER TABLE `products`
+  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT untuk tabel `settings`
+--
+ALTER TABLE `settings`
+  MODIFY `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT untuk tabel `spin_prizes`
+--
+ALTER TABLE `spin_prizes`
+  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT untuk tabel `spin_prizes_with_percentage`
+--
+ALTER TABLE `spin_prizes_with_percentage`
+  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT untuk tabel `tasks`
+--
+ALTER TABLE `tasks`
+  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT untuk tabel `user_tasks`
+--
+ALTER TABLE `user_tasks`
+  MODIFY `id` int NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT untuk tabel `withdrawals`
+--
+ALTER TABLE `withdrawals`
   MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT;
