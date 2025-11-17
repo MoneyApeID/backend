@@ -185,7 +185,7 @@ docker exec backend-mysql-1 mysql -u root -p${DB_ROOT_PASSWORD} -e "SHOW DATABAS
 docker exec -i vla-mysql mysql -u root -pvlaroot vla-ciroos < ./database/db.sql
 
 # Verify tables
-docker exec backend-mysql-1 mysql -u root -p${DB_ROOT_PASSWORD} ${DB_NAME} -e "SHOW TABLES;"
+docker exec vla-mysql mysql -u root -pvlaroot vla-db -e "SHOW TABLES;"
 ```
 
 ## 🎨 **STEP 5: SETUP FRONTEND (Next.js)**

@@ -728,6 +728,12 @@ ALTER TABLE `spin_prizes`
   ADD KEY `idx_chance_weight` (`chance_weight`);
 
 --
+-- Indeks untuk tabel `spin_prizes_with_percentage`
+--
+ALTER TABLE `spin_prizes_with_percentage`
+  ADD PRIMARY KEY (`id`);
+
+--
 -- Indeks untuk tabel `tasks`
 --
 ALTER TABLE `tasks`
