@@ -69,20 +69,23 @@ func WithdrawalHandler(w http.ResponseWriter, r *http.Request) {
 	end, errEnd := time.Parse("15:04", endTimeStr)
 	
 	if errStart == nil && errEnd == nil {
-		currentHourMin := now.Hour()*60 + now.Minute()
 		startMins := start.Hour()*60 + start.Minute()
 		endMins := end.Hour()*60 + end.Minute()
 		
-		// Handle cross-midnight
-		if startMins <= endMins {
-			if currentHourMin < startMins || currentHourMin >= endMins {
-				utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: fmt.Sprintf("Penarikan hanya dapat dilakukan pada pukul %s - %s WIB", startTimeStr, endTimeStr)})
-				return
-			}
-		} else {
-			if currentHourMin < startMins && currentHourMin >= endMins {
-				utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: fmt.Sprintf("Penarikan hanya dapat dilakukan pada pukul %s - %s WIB", startTimeStr, endTimeStr)})
-				return
+		// Skip time check if start == end (means 24h open / no restriction)
+		if startMins != endMins {
+			currentHourMin := now.Hour()*60 + now.Minute()
+			// Handle cross-midnight
+			if startMins < endMins {
+				if currentHourMin < startMins || currentHourMin >= endMins {
+					utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: fmt.Sprintf("Penarikan hanya dapat dilakukan pada pukul %s - %s WIB", startTimeStr, endTimeStr)})
+					return
+				}
+			} else {
+				if currentHourMin < startMins && currentHourMin >= endMins {
+					utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: fmt.Sprintf("Penarikan hanya dapat dilakukan pada pukul %s - %s WIB", startTimeStr, endTimeStr)})
+					return
+				}
 			}
 		}
 	}
