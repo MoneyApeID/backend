@@ -100,14 +100,6 @@ SF_API_KEY=ISI_INTERNAL_API_KEY
 JWT_AUD=
 JWT_ISS=
 
-S3_ENDPOINT=s3.ap-southeast-1.amazonaws.com
-S3_ACCESS_KEY=AKIAVTZGAV4ZU7SFELPB
-S3_SECRET_KEY=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
-S3_BUCKET=moneyrich
-S3_BUCKET_SERVER=moneyrich
-S3_REGION=ap-southeast-1
-S3_BASE_URL=
-
 CORS_ALLOWED_ORIGINS=https://moneyrich.co,https://www.moneyrich.co
 
 PAKAILINK_BASE_URL=https://api.pakailink.id
