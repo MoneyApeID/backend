@@ -670,7 +670,6 @@ func PakailinkBankTransfer(ctx context.Context, client *http.Client, accessToken
 		BeneficiaryBankCode      string                 `json:"beneficiaryBankCode"`
 		Amount                   transferAmount         `json:"amount"`
 		AdditionalInfo           transferAdditionalInfo `json:"additionalInfo"`
-		SessionId                string                 `json:"sessionId,omitempty"`
 	}
 
 	bodyObject := transferPayload{
@@ -685,7 +684,6 @@ func PakailinkBankTransfer(ctx context.Context, client *http.Client, accessToken
 			CallbackUrl: strings.TrimSpace(callbackURL),
 			Remark:      "",
 		},
-		SessionId: strings.TrimSpace(sessionID),
 	}
 
 	body, _ := json.Marshal(bodyObject)
