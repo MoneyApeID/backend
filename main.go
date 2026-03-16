@@ -64,6 +64,7 @@ func main() {
 			&models.BinaryNode{},
 			&models.Reward{},
 			&models.RewardProgress{},
+			&models.AdminWithdrawal{},
 		); err != nil {
 			log.Fatalf("failed to migrate database: %v", err)
 		}

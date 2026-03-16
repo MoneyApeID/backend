@@ -30,24 +30,33 @@ func ForumListHandler(w http.ResponseWriter, r *http.Request) {
 		return prefix + masked + suffix
 	}
 	db := database.DB
- pageStr := r.URL.Query().Get("page")
- // Support both limit and legacy page_size
- limitStr := r.URL.Query().Get("limit")
- if limitStr == "" {
- 	limitStr = r.URL.Query().Get("page_size")
- }
- page, _ := strconv.Atoi(pageStr)
- if page < 1 {
- 	page = 1
- }
- pageSize, _ := strconv.Atoi(limitStr)
- if pageSize < 1 || pageSize > 50 {
- 	pageSize = 25
- }
 
- var forums []models.Forum
- offset := (page - 1) * pageSize
- if err := db.Where("status = ?", "Accepted").Order("created_at DESC").Limit(pageSize).Offset(offset).Find(&forums).Error; err != nil {
+	// Pagination params (support limit & legacy page_size)
+	pageStr := r.URL.Query().Get("page")
+	limitStr := r.URL.Query().Get("limit")
+	if limitStr == "" {
+		limitStr = r.URL.Query().Get("page_size")
+	}
+
+	page, _ := strconv.Atoi(pageStr)
+	if page < 1 {
+		page = 1
+	}
+	pageSize, _ := strconv.Atoi(limitStr)
+	if pageSize < 1 || pageSize > 50 {
+		pageSize = 25
+	}
+
+	// Total accepted testimonials for proper pagination
+	var totalRows int64
+	if err := db.Model(&models.Forum{}).Where("status = ?", "Accepted").Count(&totalRows).Error; err != nil {
+		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "DB error"})
+		return
+	}
+
+	var forums []models.Forum
+	offset := (page - 1) * pageSize
+	if err := db.Where("status = ?", "Accepted").Order("created_at DESC").Limit(pageSize).Offset(offset).Find(&forums).Error; err != nil {
 		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "DB error"})
 		return
 	}
@@ -105,7 +114,26 @@ func ForumListHandler(w http.ResponseWriter, r *http.Request) {
 			Time:        f.CreatedAt.Format("2006-01-02 15:04:05"),
 		})
 	}
-	utils.WriteJSON(w, http.StatusOK, utils.APIResponse{Success: true, Message: "Successfully", Data: resp})
+	data := map[string]interface{}{
+		"items": resp,
+		"total": totalRows,
+		"pagination": map[string]interface{}{
+			"page":       page,
+			"limit":      pageSize,
+			"total_rows": totalRows,
+			"total_pages": func() int64 {
+				if pageSize <= 0 {
+					return 1
+				}
+				if totalRows == 0 {
+					return 1
+				}
+				return (totalRows + int64(pageSize) - 1) / int64(pageSize)
+			}(),
+		},
+	}
+
+	utils.WriteJSON(w, http.StatusOK, utils.APIResponse{Success: true, Message: "Successfully", Data: data})
 }
 
 // GET /api/users/check-forum //check if user has withdrawal in last 3 days and give response data {has_withdrawal: true/false}
@@ -116,12 +144,33 @@ func CheckWithdrawalForumHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var count int64
-	threeDaysAgo := time.Now().AddDate(0, 0, -3)
 	db := database.DB
-	db.Model(&models.Withdrawal{}).Where("user_id = ? AND created_at >= ?", uid, threeDaysAgo).Count(&count)
 
-	utils.WriteJSON(w, http.StatusOK, utils.APIResponse{Success: true, Message: "Successfully", Data: map[string]bool{"has_withdrawal": count > 0}})
+	// Total successful withdrawals
+	var totalWithdrawals int64
+	if err := db.Model(&models.Withdrawal{}).
+		Where("user_id = ? AND status = ?", uid, "Success").
+		Count(&totalWithdrawals).Error; err != nil {
+		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "DB error"})
+		return
+	}
+
+	// Total testimonials already linked to a withdrawal (used quota)
+	var usedCount int64
+	if err := db.Model(&models.Forum{}).
+		Where("user_id = ? AND withdrawal_id IS NOT NULL", uid).
+		Count(&usedCount).Error; err != nil {
+		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "DB error"})
+		return
+	}
+
+	hasQuota := totalWithdrawals > usedCount
+
+	utils.WriteJSON(w, http.StatusOK, utils.APIResponse{
+		Success: true,
+		Message: "Successfully",
+		Data:    map[string]bool{"has_withdrawal": hasQuota},
+	})
 }
 
 // POST /api/users/forum/submit
@@ -138,9 +187,54 @@ func ForumSubmitHandler(w http.ResponseWriter, r *http.Request) {
 		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "Invalid form data"})
 		return
 	}
+
+	db := database.DB
+
 	description := r.FormValue("description")
 	if len(description) < 5 || len(description) > 60 {
 		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "Deskripsi harus 5-60 karakter"})
+		return
+	}
+
+	// Link testimonial to the latest successful withdrawal that does not yet have a testimonial.
+	// Each withdrawal grants exactly one testimonial slot.
+	var withdrawals []models.Withdrawal
+	if err := db.Where("user_id = ? AND status = ?", uid, "Success").
+		Order("created_at DESC").
+		Find(&withdrawals).Error; err != nil {
+		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "Gagal mengambil data penarikan"})
+		return
+	}
+	if len(withdrawals) == 0 {
+		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "Anda belum memiliki penarikan yang berhasil"})
+		return
+	}
+
+	var existingForums []models.Forum
+	if err := db.Where("user_id = ? AND withdrawal_id IS NOT NULL", uid).Find(&existingForums).Error; err != nil {
+		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "Gagal memeriksa testimoni sebelumnya"})
+		return
+	}
+	used := make(map[uint]struct{}, len(existingForums))
+	for _, f := range existingForums {
+		if f.WithdrawalID != nil {
+			used[*f.WithdrawalID] = struct{}{}
+		}
+	}
+
+	var targetWithdrawal *models.Withdrawal
+	for i := range withdrawals {
+		wd := withdrawals[i]
+		if _, ok := used[wd.ID]; !ok {
+			targetWithdrawal = &wd
+			break
+		}
+	}
+	if targetWithdrawal == nil {
+		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{
+			Success: false,
+			Message: "Semua penarikan Anda sudah memiliki testimoni",
+		})
 		return
 	}
 	file, handler, err := r.FormFile("image")
@@ -212,15 +306,6 @@ func ForumSubmitHandler(w http.ResponseWriter, r *http.Request) {
 	// Prepare a ReadSeeker for S3 upload and presign
 	reader := bytes.NewReader(outBuf.Bytes())
 
-	// Check withdrawal in last 3 days
-	var count int64
-	threeDaysAgo := time.Now().AddDate(0, 0, -3)
-	db := database.DB
-	db.Model(&models.Withdrawal{}).Where("user_id = ? AND created_at >= ?", uid, threeDaysAgo).Count(&count)
-	if count == 0 {
-		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "Tidak ada penarikan dalam 3 hari terakhir"})
-		return
-	}
 	// Upload image to S3 (private) and get presigned URL
 	randomNum := time.Now().UnixNano()
 	uidUint := uid
@@ -235,10 +320,11 @@ func ForumSubmitHandler(w http.ResponseWriter, r *http.Request) {
 	_ = presignedURL // currently not stored; consumed by clients via separate endpoint if needed
 
 	forum := models.Forum{
-		UserID:      uidUint,
-		Description: description,
-		Image:       imgName,
-		Status:      "Pending",
+		UserID:       uidUint,
+		WithdrawalID: &targetWithdrawal.ID,
+		Description:  description,
+		Image:        imgName,
+		Status:       "Pending",
 	}
 	if err := db.Create(&forum).Error; err != nil {
 		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "DB error"})

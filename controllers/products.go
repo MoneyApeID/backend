@@ -11,9 +11,9 @@ import (
 func ProductListHandler(w http.ResponseWriter, r *http.Request) {
 	db := database.DB
 
-	// Get active categories (prioritize category ID 1)
+	// Get active categories ordered by ID
 	var categories []models.Category
-	if err := db.Where("status = ?", "Active").Order("CASE WHEN id = 1 THEN 0 ELSE id END ASC").Find(&categories).Error; err != nil {
+	if err := db.Where("status = ?", "Active").Order("id ASC").Find(&categories).Error; err != nil {
 		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "Terjadi kesalahan sistem, silakan coba lagi"})
 		return
 	}

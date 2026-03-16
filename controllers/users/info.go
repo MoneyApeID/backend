@@ -67,6 +67,7 @@ func InfoHandler(w http.ResponseWriter, r *http.Request) {
 				"company":         setting.Company,
 				"popup":           setting.Popup,
 				"popup_title":     setting.PopupTitle,
+				"min_deposit":     int64(setting.MinDeposit),
 				"min_withdraw":    int64(setting.MinWithdraw),
 				"max_withdraw":    int64(setting.MaxWithdraw),
 				"withdraw_charge": int64(setting.WithdrawCharge),

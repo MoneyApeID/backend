@@ -3,7 +3,9 @@ package routes
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"project/database"
+	"strings"
 	"time"
 
 	"project/controllers"
@@ -22,12 +24,38 @@ func optionsHandler(w http.ResponseWriter, r *http.Request) {
 func InitRouter() *mux.Router {
 	r := mux.NewRouter()
 
+	// Root health check for Docker/Nginx/VPS probes.
+	r.Handle("/health", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":    "healthy",
+			"timestamp": time.Now().Unix(),
+			"service":   "moneyrich-api",
+		})
+	})).Methods(http.MethodGet)
+
+	origins := []string{
+		"https://moneyrich.co",
+		"https://www.moneyrich.co",
+		"https://api.moneyrich.co",
+		"http://localhost:3000",
+		"http://127.0.0.1:3000",
+	}
+	if originsEnv := strings.TrimSpace(os.Getenv("CORS_ALLOWED_ORIGINS")); originsEnv != "" {
+		for _, origin := range strings.Split(originsEnv, ",") {
+			if trimmed := strings.TrimSpace(origin); trimmed != "" {
+				origins = append(origins, trimmed)
+			}
+		}
+	}
+
 	// Add CORS middleware
 	r.Use(func(next http.Handler) http.Handler {
 		return handlers.CORS(
-			handlers.AllowedOrigins([]string{"https://ciroos.ca", "https://stoneform.co.id", "https://api.stoneform.co.id", "http://localhost:3000"}),
-			handlers.AllowedMethods([]string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}),
-			handlers.AllowedHeaders([]string{"Content-Type", "Authorization", "X-VLA-KEY", "X-CRON-KEY"}),
+			handlers.AllowedOrigins(origins),
+			handlers.AllowedMethods([]string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"}),
+			handlers.AllowedHeaders([]string{"Content-Type", "Authorization", "X-VLA-KEY", "X-CRON-KEY", "X-Requested-With", "X-Request-ID"}),
 			handlers.AllowCredentials(),
 		)(next)
 	})
@@ -51,11 +79,15 @@ func InitRouter() *mux.Router {
 	// Cron endpoint for daily returns (protected via X-CRON-KEY header)
 	api.Handle("/cron/daily-returns", cronLimiter.Middleware(http.HandlerFunc(users.CronDailyReturnsHandler))).Methods(http.MethodPost)
 
-	// LinkQu payment callback (no auth, whitelist, sliding window)
-	api.Handle("/payments/linkqu/callback", webhookLimiter.Middleware(http.HandlerFunc(users.LinkQuCallbackHandler))).Methods(http.MethodPost)
+	// PakaiLink payment callbacks (VA + QRIS)
+	api.Handle("/callback/payments", webhookLimiter.Middleware(http.HandlerFunc(users.PakailinkCallbackHandler))).Methods(http.MethodPost)
 
-	// LinkQu payout callback (withdrawal)
-	api.Handle("/payouts/linkqu/callback", webhookLimiter.Middleware(http.HandlerFunc(admins.LinkQuPayoutCallbackHandler))).Methods(http.MethodPost)
+	// PakaiLink payout callback (bank transfer + e-wallet topup)
+	api.Handle("/callback/payouts", webhookLimiter.Middleware(http.HandlerFunc(admins.PakailinkPayoutCallbackHandler))).Methods(http.MethodPost)
+
+	// Backward-compatible aliases if older callback URLs still hit the API.
+	api.Handle("/payments/linkqu/callback", webhookLimiter.Middleware(http.HandlerFunc(users.PakailinkCallbackHandler))).Methods(http.MethodPost)
+	api.Handle("/payouts/linkqu/callback", webhookLimiter.Middleware(http.HandlerFunc(admins.PakailinkPayoutCallbackHandler))).Methods(http.MethodPost)
 
 	api.Handle("/payouts/kyta/webhook", webhookLimiter.Middleware(http.HandlerFunc(admins.KytaPayoutWebhookHandler))).Methods(http.MethodPost)
 
@@ -78,7 +110,7 @@ func InitRouter() *mux.Router {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"status":    "healthy",
 			"timestamp": time.Now().Unix(),
-			"service":   "stoneform-api",
+			"service":   "moneyrich-api",
 		})
 	})).Methods(http.MethodGet)
 

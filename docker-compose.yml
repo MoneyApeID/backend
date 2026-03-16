@@ -1,137 +1,73 @@
 services:
-  # MySQL Database
   db:
     image: mysql:8.0
-    container_name: vla-mysql
+    container_name: moneyrich-mysql
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
       MYSQL_DATABASE: ${DB_NAME}
       MYSQL_USER: ${DB_USER}
       MYSQL_PASSWORD: ${DB_PASS}
+    command: --default-authentication-plugin=mysql_native_password --innodb-buffer-pool-size=256M
     volumes:
       - mysql_data:/var/lib/mysql
     networks:
-      - app-network
+      - moneyrich-network
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u${DB_USER}", "-p${DB_PASS}"]
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u${DB_USER} -p${DB_PASS}"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 30s
-    command: --default-authentication-plugin=mysql_native_password --innodb-buffer-pool-size=256M
+      retries: 10
+      start_period: 40s
 
-  # Redis Cache
   redis:
     image: redis:7-alpine
-    container_name: vla-redis
+    container_name: moneyrich-redis
     restart: unless-stopped
     command: redis-server --appendonly yes --requirepass ${REDIS_PASS}
     volumes:
       - redis_data:/data
     networks:
-      - app-network
+      - moneyrich-network
     healthcheck:
-      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a ${REDIS_PASS} ping | grep PONG"]
       interval: 10s
       timeout: 3s
-      retries: 5
+      retries: 10
 
-  # Application
   app:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: vla-app
+    container_name: moneyrich-api
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
+    env_file:
+      - .env
     environment:
-      # Application
-      ENV: production
-      PORT: 8080
-      
-      # Database
       DB_HOST: db
-      DB_PORT: 3306
-      DB_USER: ${DB_USER}
-      DB_PASS: ${DB_PASS}
-      DB_NAME: ${DB_NAME}
-      DB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
-      DB_TLS: ${DB_TLS}
-      
-      # Redis
       REDIS_ADDR: redis:6379
-      REDIS_PASS: ${REDIS_PASS}
-      REDIS_DB: 0
-      
-      # JWT
-      JWT_SECRET: ${JWT_SECRET}
-
-      # LINKQU
-      LINKQU_BASE_URL: ${LINKQU_BASE_URL}
-      LINKQU_USERNAME: ${LINKQU_USERNAME}
-      LINKQU_PIN: ${LINKQU_PIN}
-      LINKQU_CLIENT_ID: ${LINKQU_CLIENT_ID}
-      LINKQU_CLIENT_SECRET: ${LINKQU_CLIENT_SECRET}
-      LINKQU_CALLBACK_PAYMENT: ${LINKQU_CALLBACK_PAYMENT}
-      LINKQU_CALLBACK_PAYOUT: ${LINKQU_CALLBACK_PAYOUT}
-
-      # Cron
-      CRON_KEY: ${CRON_KEY}
-      SF_API_KEY: ${SF_API_KEY}
-      
-      # S3 (if using file uploads)
-      S3_ENDPOINT: ${S3_ENDPOINT}
-      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
-      S3_SECRET_KEY: ${S3_SECRET_KEY}
-      S3_BUCKET: ${S3_BUCKET}
-      S3_BUCKET_SERVER: ${S3_BUCKET_SERVER}
-      S3_REGION: ${S3_REGION}
     ports:
       - "${APP_PORT:-8080}:8080"
+    volumes:
+      - ./keys:/app/keys:ro
     networks:
-      - app-network
+      - moneyrich-network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health", "||", "exit", "1"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:8080/health || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
       start_period: 40s
-
-  # Nginx Reverse Proxy (Optional)
-  nginx:
-    image: nginx:alpine
-    container_name: vla-nginx
-    restart: unless-stopped
-    depends_on:
-      - app
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./ssl:/etc/nginx/ssl:ro
-      - nginx_logs:/var/log/nginx
-    networks:
-      - app-network
-    profiles:
-      - nginx
 
 volumes:
   mysql_data:
-    driver: local
   redis_data:
-    driver: local
-  nginx_logs:
-    driver: local
 
 networks:
-  app-network:
+  moneyrich-network:
     driver: bridge
-    ipam:
-      config:
-        - subnet: 172.20.0.0/16

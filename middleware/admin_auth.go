@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"project/database"
@@ -81,7 +82,8 @@ func AdminAuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Admin is authenticated, proceed
-		next.ServeHTTP(w, r)
+		// Admin is authenticated, pass admin_id in context
+		ctx := context.WithValue(r.Context(), "admin_id", uint(admin.ID))
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

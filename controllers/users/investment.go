@@ -202,21 +202,29 @@ func CreateInvestmentHandler(w http.ResponseWriter, r *http.Request) {
 
 		newBalance := round3(userForUpdate.Balance - product.Amount)
 		finalBalance = newBalance
+
 		newTotalInvest := round3(userForUpdate.TotalInvest + product.Amount)
+
+		// Hanya kategori dengan profit_type "locked" yang dihitung untuk VIP
+		newTotalInvestVIP := userForUpdate.TotalInvestVIP
+		if product.Category != nil && product.Category.ProfitType == "locked" {
+			newTotalInvestVIP = round3(userForUpdate.TotalInvestVIP + product.Amount)
+		}
+
 		updateFields := map[string]interface{}{
-			"balance":            newBalance,
-			"total_invest":       newTotalInvest,
-			"total_invest_vip":   newTotalInvest,
-			"investment_status":  "Active",
-			"updated_at":         time.Now(),
+			"balance":           newBalance,
+			"total_invest":      newTotalInvest,
+			"total_invest_vip":  newTotalInvestVIP,
+			"investment_status": "Active",
+			"updated_at":        time.Now(),
 		}
 
 		if err := tx.Model(&models.User{}).Where("id = ?", uid).Updates(updateFields).Error; err != nil {
 			return err
 		}
 
-		// Update VIP level if needed for locked category
-		newLevel := calculateVIPLevel(newTotalInvest)
+		// Update VIP level berdasarkan total investasi kategori locked
+		newLevel := calculateVIPLevel(newTotalInvestVIP)
 		if userForUpdate.Level == nil || *userForUpdate.Level != newLevel {
 			if err := tx.Model(&models.User{}).Where("id = ?", uid).Update("level", newLevel).Error; err != nil {
 				return err
@@ -228,7 +236,7 @@ func CreateInvestmentHandler(w http.ResponseWriter, r *http.Request) {
 			// User baru aktif, initialize reward progress
 			// Note: Ini dilakukan setelah transaction commit
 		}
-		
+
 		msg := fmt.Sprintf("Berhasil melakukan investasi pada produk %s", product.Name)
 		trx := models.Transaction{
 			UserID:          uid,
@@ -656,8 +664,17 @@ func updateUplineRewardProgress(userID uint, db *gorm.DB) error {
 }
 
 func calculateVIPLevel(totalInvestVIP float64) uint {
-	if totalInvestVIP >= 10000 {
+	// VIP1: 50k, VIP2: 1.2M, VIP3: 10M, VIP4: 30M, VIP5: 150M
+	if totalInvestVIP >= 150000000 {
+		return 5
+	} else if totalInvestVIP >= 30000000 {
+		return 4
+	} else if totalInvestVIP >= 10000000 {
+		return 3
+	} else if totalInvestVIP >= 1200000 {
 		return 2
+	} else if totalInvestVIP >= 50000 {
+		return 1
 	}
-	return 1
+	return 0
 }

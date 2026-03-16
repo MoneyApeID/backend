@@ -73,10 +73,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "Password tidak cocok"})
 		return
 	}
-	if req.ReferralCode == "" {
-		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "Kode referral tidak boleh kosong"})
-		return
-	}
+
 
 	db := database.DB
 

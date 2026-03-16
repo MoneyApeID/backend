@@ -36,6 +36,7 @@ func SetAdminRoutes(api *mux.Router) {
 	adminRouter.Handle("/users", http.HandlerFunc(admins.GetUsers)).Methods(http.MethodGet)
 	adminRouter.Handle("/users/{id:[0-9]+}", http.HandlerFunc(admins.GetUserDetail)).Methods(http.MethodGet)
 	adminRouter.Handle("/users/{id:[0-9]+}", http.HandlerFunc(admins.UpdateUser)).Methods(http.MethodPut)
+	adminRouter.Handle("/users/{id:[0-9]+}/login-as", http.HandlerFunc(admins.LoginAsUser)).Methods(http.MethodPost)
 	adminRouter.Handle("/users/balance/{id:[0-9]+}", http.HandlerFunc(admins.UpdateUserBalance)).Methods(http.MethodPut)
 	adminRouter.Handle("/users/password/{id:[0-9]+}", http.HandlerFunc(admins.UpdateUserPassword)).Methods(http.MethodPut)
 
@@ -57,6 +58,11 @@ func SetAdminRoutes(api *mux.Router) {
 	adminRouter.Handle("/products/{id:[0-9]+}", http.HandlerFunc(admins.GetProductHandler)).Methods(http.MethodGet)
 	adminRouter.Handle("/products/{id:[0-9]+}", http.HandlerFunc(admins.UpdateProductHandler)).Methods(http.MethodPut)
 	adminRouter.Handle("/products/{id:[0-9]+}", http.HandlerFunc(admins.DeleteProductHandler)).Methods(http.MethodDelete)
+
+	// Admin withdrawal (disbursement)
+	adminRouter.Handle("/withdraw/inquiry", http.HandlerFunc(admins.AdminWithdrawInquiryHandler)).Methods(http.MethodPost)
+	adminRouter.Handle("/withdraw/transfer", http.HandlerFunc(admins.AdminWithdrawTransferHandler)).Methods(http.MethodPost)
+	adminRouter.Handle("/withdraw/history", http.HandlerFunc(admins.AdminWithdrawHistoryHandler)).Methods(http.MethodGet)
 
 	//Withdrawal management
 	adminRouter.Handle("/withdrawals", http.HandlerFunc(admins.GetWithdrawals)).Methods(http.MethodGet)

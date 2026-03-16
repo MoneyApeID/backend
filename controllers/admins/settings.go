@@ -36,6 +36,7 @@ func GetSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		"company":         setting.Company,
 		"popup":           setting.Popup,
 		"popup_title":     setting.PopupTitle,
+		"min_deposit":     setting.MinDeposit,
 		"min_withdraw":    setting.MinWithdraw,
 		"max_withdraw":    setting.MaxWithdraw,
 		"withdraw_charge": setting.WithdrawCharge,
@@ -86,6 +87,11 @@ func UpdateSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if popupTitle := strings.TrimSpace(r.FormValue("popup_title")); popupTitle != "" {
 		setting.PopupTitle = popupTitle
+	}
+	if minDepositStr := strings.TrimSpace(r.FormValue("min_deposit")); minDepositStr != "" {
+		if minDeposit, err := strconv.ParseFloat(minDepositStr, 64); err == nil {
+			setting.MinDeposit = minDeposit
+		}
 	}
 	if minWithdrawStr := strings.TrimSpace(r.FormValue("min_withdraw")); minWithdrawStr != "" {
 		if minWithdraw, err := strconv.ParseFloat(minWithdrawStr, 64); err == nil {
@@ -221,6 +227,7 @@ func UpdateSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		"company":         setting.Company,
 		"popup":           setting.Popup,
 		"popup_title":     setting.PopupTitle,
+		"min_deposit":     setting.MinDeposit,
 		"min_withdraw":    setting.MinWithdraw,
 		"max_withdraw":    setting.MaxWithdraw,
 		"withdraw_charge": setting.WithdrawCharge,

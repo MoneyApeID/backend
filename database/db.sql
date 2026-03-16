@@ -58,7 +58,9 @@ INSERT INTO `admins` (`id`, `username`, `password`, `name`, `email`, `role`, `is
 CREATE TABLE `banks` (
   `id` int UNSIGNED NOT NULL,
   `name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Bank Rakyat Indonesia, Bank Central Asia, Dana, GoPay',
-  `code` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'BRI, BCA, DANA, GOPAY for payment gateway API',
+  `short_name` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'BCA, BRI - untuk search/display',
+  `type` enum('bank','ewallet') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'bank' COMMENT 'bank atau ewallet',
+  `code` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '014 untuk BCA, DANA untuk ewallet - kode gateway/Pakailink',
   `status` enum('Active','Maintenance','Inactive') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Active'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Available banks and e-wallets for withdrawal';
 
@@ -66,29 +68,118 @@ CREATE TABLE `banks` (
 -- Dumping data untuk tabel `banks`
 --
 
-INSERT INTO `banks` (`id`, `name`, `code`, `status`) VALUES
-(1, 'Bank Central Asia', 'BCA', 'Active'),
-(2, 'Bank Rakyat Indonesia', 'BRI', 'Active'),
-(3, 'Bank Negara Indonesia', 'BNI', 'Active'),
-(4, 'Bank Syariah Indonesia', 'BSI', 'Active'),
-(5, 'Bank Tabungan Negara', 'BTN', 'Active'),
-(6, 'Bank Mandiri', 'MANDIRI', 'Active'),
-(7, 'Bank Danamon', 'DANAMON', 'Active'),
-(8, 'Bank Permata', 'PERMATA', 'Active'),
-(9, 'Bank CIMB Niaga', 'CIMB', 'Active'),
-(10, 'Bank OCBC NISP', 'OCBC', 'Active'),
-(11, 'Bank Mega', 'MEGA', 'Active'),
-(12, 'Bank KB Bukopin', 'BUKOPIN', 'Active'),
-(13, 'Bank Sahabat Sampoerna', 'BSS', 'Active'),
-(14, 'Bank Neo Commerce', 'BNC', 'Active'),
-(15, 'Bank Jago', 'JAGO', 'Active'),
-(16, 'SeaBank', 'SEABANK', 'Active'),
-(17, 'Allo Bank', 'ALLO', 'Active'),
-(18, 'Dana', 'DANA', 'Active'),
-(19, 'GoPay', 'GOPAY', 'Active'),
-(20, 'OVO', 'OVO', 'Active'),
-(21, 'ShopeePay', 'SHOPEEPAY', 'Active'),
-(22, 'LinkAja', 'LINKAJA', 'Active');
+INSERT INTO `banks` (`id`, `name`, `short_name`, `type`, `code`, `status`) VALUES
+(1, 'Dana', 'DANA', 'ewallet', 'DANA', 'Active'),
+(2, 'GoPay', 'GOPAY', 'ewallet', 'GOPAY', 'Active'),
+(3, 'OVO', 'OVO', 'ewallet', 'OVO', 'Active'),
+(4, 'ShopeePay', 'SHOPEEPAY', 'ewallet', 'SHOPEEPAY', 'Active'),
+(5, 'LinkAja', 'LINKAJA', 'ewallet', 'LINKAJA', 'Active'),
+(6, 'Bank BRI', 'BRI', 'bank', '002', 'Active'),
+(7, 'Bank Mandiri', 'MANDIRI', 'bank', '008', 'Active'),
+(8, 'Bank BNI', 'BNI', 'bank', '009', 'Active'),
+(9, 'Bank Danamon Indonesia', 'DANAMON', 'bank', '011', 'Active'),
+(10, 'Bank Permata', 'PERMATA', 'bank', '013', 'Active'),
+(11, 'Bank BCA', 'BCA', 'bank', '014', 'Active'),
+(12, 'Bank Maybank Indonesia', 'MAYBANK', 'bank', '016', 'Active'),
+(13, 'Bank Panin', 'PANIN', 'bank', '019', 'Active'),
+(14, 'Bank CIMB Niaga', 'CIMB', 'bank', '022', 'Active'),
+(15, 'Bank UOB Indonesia', 'UOB', 'bank', '023', 'Active'),
+(16, 'Bank OCBC Indonesia', 'OCBC', 'bank', '028', 'Active'),
+(17, 'Citibank, N.A', 'CITIBANK', 'bank', '031', 'Active'),
+(18, 'JP. Morgan Chase Bank, N.A', 'JPM', 'bank', '032', 'Active'),
+(19, 'Bank of America, N.A', 'BOA', 'bank', '033', 'Active'),
+(20, 'China Construction Bank Indonesia', 'CCB', 'bank', '036', 'Active'),
+(21, 'Bank Artha Graha Internasional', 'AGI', 'bank', '037', 'Active'),
+(22, 'Bangkok Bank', 'BANGKOK', 'bank', '040', 'Active'),
+(23, 'MUFG Bank, Ltd.', 'MUFG', 'bank', '042', 'Active'),
+(24, 'Bank DBS Indonesia', 'DBS', 'bank', '046', 'Active'),
+(25, 'Bank Resona Perdania', 'BRP', 'bank', '047', 'Active'),
+(26, 'Bank Mizuho Indonesia', 'MIZUHO', 'bank', '048', 'Active'),
+(27, 'Standard Chartered Bank', 'CHARTERED', 'bank', '050', 'Active'),
+(28, 'Bank Capital Indonesia', 'CAPITAL', 'bank', '054', 'Active'),
+(29, 'Bank BNP Paribas Indonesia', 'BNP', 'bank', '057', 'Active'),
+(30, 'Bank ANZ Indonesia', 'ANZ', 'bank', '061', 'Active'),
+(31, 'Deutsche Bank AG', 'DEUTSCHE', 'bank', '067', 'Active'),
+(32, 'Bank of China', 'BOC', 'bank', '069', 'Active'),
+(33, 'Bank Bumi Arta', 'ARTA', 'bank', '076', 'Active'),
+(34, 'Bank HSBC Indonesia', 'HSBC', 'bank', '087', 'Active'),
+(35, 'Bank J Trust Indonesia', 'JTRUST', 'bank', '095', 'Active'),
+(36, 'Bank Mayapada', 'MAYAPADA', 'bank', '097', 'Active'),
+(37, 'Bank BJB', 'BJB', 'bank', '110', 'Active'),
+(38, 'Bank DKI', 'DKI', 'bank', '111', 'Active'),
+(39, 'Bank BPD DIY', 'DIY', 'bank', '112', 'Active'),
+(40, 'Bank Jateng', 'JATENG', 'bank', '113', 'Active'),
+(41, 'Bank Jatim', 'JATIM', 'bank', '114', 'Active'),
+(42, 'Bank Jambi', 'JAMBI', 'bank', '115', 'Active'),
+(43, 'Bank Aceh Syariah', 'ACEHSYARIAH', 'bank', '116', 'Active'),
+(44, 'Bank Sumut', 'SUMUT', 'bank', '117', 'Active'),
+(45, 'Bank Nagari', 'NAGARI', 'bank', '118', 'Active'),
+(46, 'Bank Riau Kepri Syariah', 'RIAUSYARIAH', 'bank', '119', 'Active'),
+(47, 'Bank Sumsel Babel', 'SUMSEL', 'bank', '120', 'Active'),
+(48, 'Bank Lampung', 'LAMPUNG', 'bank', '121', 'Active'),
+(49, 'Bank Kalsel', 'KALSEL', 'bank', '122', 'Active'),
+(50, 'Bank Kalbar', 'KALBAR', 'bank', '123', 'Active'),
+(51, 'Bank Kaltimtara', 'KALTIM', 'bank', '124', 'Active'),
+(52, 'Bank Kalteng', 'KALTENG', 'bank', '125', 'Active'),
+(53, 'Bank Sulselbar', 'SULSELBAR', 'bank', '126', 'Active'),
+(54, 'Bank SulutGo', 'SULUTGO', 'bank', '127', 'Active'),
+(55, 'Bank NTB Syariah', 'NTBSYARIAH', 'bank', '128', 'Active'),
+(56, 'Bank BPD Bali', 'BALI', 'bank', '129', 'Active'),
+(57, 'Bank NTT', 'NTT', 'bank', '130', 'Active'),
+(58, 'Bank Maluku Malut', 'MALUKU', 'bank', '131', 'Active'),
+(59, 'Bank Papua', 'PAPUA', 'bank', '132', 'Active'),
+(60, 'Bank Bengkulu', 'BENGKULU', 'bank', '133', 'Active'),
+(61, 'Bank Sulteng', 'SULTENG', 'bank', '134', 'Active'),
+(62, 'Bank Sultra', 'SULTRA', 'bank', '135', 'Active'),
+(63, 'Bank Banten', 'BANTEN', 'bank', '137', 'Active'),
+(64, 'Bank of India Indonesia', 'BOI', 'bank', '146', 'Active'),
+(65, 'Bank Muamalat Indonesia', 'MUAMALAT', 'bank', '147', 'Active'),
+(66, 'Bank Mestika Dharma', 'MESTIKA', 'bank', '151', 'Active'),
+(67, 'Bank Shinhan Indonesia', 'SHINHAN', 'bank', '152', 'Active'),
+(68, 'Bank Sinarmas', 'SINARMAS', 'bank', '153', 'Active'),
+(69, 'Bank Maspion Indonesia', 'MASPION', 'bank', '157', 'Active'),
+(70, 'Bank Ganesha', 'GANESHA', 'bank', '161', 'Active'),
+(71, 'Bank ICBC Indonesia', 'ICBC', 'bank', '164', 'Active'),
+(72, 'Bank QNB Indonesia', 'QNB', 'bank', '167', 'Active'),
+(73, 'Bank BTN', 'BTN', 'bank', '200', 'Active'),
+(74, 'Bank Woori Saudara', 'WOORI', 'bank', '212', 'Active'),
+(75, 'Bank SMBC Indonesia (Jenius)', 'JENIUS', 'bank', '213', 'Active'),
+(76, 'Bank BJB Syariah', 'BJBSYARIAH', 'bank', '425', 'Active'),
+(77, 'Bank Mega', 'MEGA', 'bank', '426', 'Active'),
+(78, 'Bank KB Bukopin', 'BUKOPIN', 'bank', '441', 'Active'),
+(79, 'Bank Syariah Indonesia (BSI)', 'BSI', 'bank', '451', 'Active'),
+(80, 'Krom Bank Indonesia', 'KROM', 'bank', '459', 'Active'),
+(81, 'Bank Jasa Jakarta', 'BJJ', 'bank', '472', 'Active'),
+(82, 'Bank Hana (Line Bank)', 'LINE', 'bank', '484', 'Active'),
+(83, 'Bank MNC Internasional', 'MNC', 'bank', '485', 'Active'),
+(84, 'Bank Neo Commerce', 'NEO', 'bank', '490', 'Active'),
+(85, 'Bank Raya Indonesia', 'RAYA', 'bank', '494', 'Active'),
+(86, 'Bank SBI Indonesia', 'SBI', 'bank', '498', 'Active'),
+(87, 'Bank Digital BCA (blu)', 'BLU', 'bank', '501', 'Active'),
+(88, 'Bank National Nobu', 'NOBU', 'bank', '503', 'Active'),
+(89, 'Bank Mega Syariah', 'MEGASYARIAH', 'bank', '506', 'Active'),
+(90, 'Bank Ina Perdana', 'INA', 'bank', '513', 'Active'),
+(91, 'Bank Panin Dubai Syariah', 'PANINSYARIAH', 'bank', '517', 'Active'),
+(92, 'Prima Master Bank', 'PRIMA', 'bank', '520', 'Active'),
+(93, 'Bank KB Bukopin Syariah', 'BUKOPINSYARIAH', 'bank', '521', 'Active'),
+(94, 'Bank Sahabat Sampoerna', 'SAMPOERNA', 'bank', '523', 'Active'),
+(95, 'Bank Oke Indonesia', 'OKE', 'bank', '526', 'Active'),
+(96, 'Bank Amar Indonesia', 'AMAR', 'bank', '531', 'Active'),
+(97, 'SeaBank Indonesia', 'SEABANK', 'bank', '535', 'Active'),
+(98, 'Bank BCA Syariah', 'BCASYARIAH', 'bank', '536', 'Active'),
+(99, 'Bank Jago', 'JAGO', 'bank', '542', 'Active'),
+(100, 'Bank BTPN Syariah', 'BTPNSYARIAH', 'bank', '547', 'Active'),
+(101, 'Bank Multi Arta Sentosa', 'MAS', 'bank', '548', 'Active'),
+(102, 'Bank Hibank Indonesia', 'HIBANK', 'bank', '553', 'Active'),
+(103, 'Bank Index Selindo', 'INDEX SELINDO', 'bank', '555', 'Active'),
+(104, 'Super Bank Indonesia', 'SUPERBANK', 'bank', '562', 'Active'),
+(105, 'Bank Mandiri Taspen', 'MANDIRITASPEN', 'bank', '564', 'Active'),
+(106, 'Bank Victoria International', 'VICTORIA', 'bank', '566', 'Active'),
+(107, 'Allo Bank Indonesia', 'ALLO', 'bank', '567', 'Active'),
+(108, 'Bank IBK Indonesia', 'IBK', 'bank', '945', 'Active'),
+(109, 'Bank Aladin Syariah', 'ALADIN', 'bank', '947', 'Active'),
+(110, 'Bank CTBC Indonesia', 'CTBC', 'bank', '949', 'Active'),
+(111, 'Bank Commonwealth', 'COMMONWEALTH', 'bank', '950', 'Active');
 
 -- --------------------------------------------------------
 
@@ -125,9 +216,9 @@ CREATE TABLE `categories` (
 --
 
 INSERT INTO `categories` (`id`, `name`, `description`, `profit_type`, `status`, `created_at`, `updated_at`) VALUES
-(1, 'Monitor', 'Profit terkunci, dibayarkan saat investasi selesai', 'locked', 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
-(2, 'Insight', 'Profit langsung dibayarkan', 'unlocked', 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
-(3, 'AutoPilot', 'Profit langsung dibayarkan', 'unlocked', 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00');
+(1, 'Neura', 'Profit terkunci, dibayarkan saat investasi selesai', 'locked', 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
+(2, 'Finora', 'Profit langsung dibayarkan', 'unlocked', 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
+(3, 'Corex', 'Profit langsung dibayarkan', 'unlocked', 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00');
 
 -- --------------------------------------------------------
 
@@ -182,7 +273,7 @@ CREATE TABLE `deposits` (
   `amount` decimal(15,2) NOT NULL,
   `order_id` varchar(191) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `payment_method` enum('QRIS','BANK') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
-  `payment_channel` enum('BCA','BRI','BNI','MANDIRI','PERMATA','BNC') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `payment_channel` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `payment_code` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   `status` enum('Success','Pending','Failed','Expired') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Pending',
   `expired_at` datetime NOT NULL,
@@ -237,7 +328,7 @@ CREATE TABLE `payment_settings` (
 --
 
 INSERT INTO `payment_settings` (`id`, `pakasir_api_key`, `pakasir_project`, `deposit_amount`, `bank_name`, `bank_code`, `account_number`, `account_name`, `withdraw_amount`, `wishlist_id`, `created_at`, `updated_at`) VALUES
-(1, 'AWD1A2AWD132', 'AWD1SAD2A1W', 10000.00, 'Bank BCA', 'BCA', '1234567890', 'StoneForm Admin', 50000.00, '1', '2025-09-26 12:13:38', '2025-09-26 12:13:38');
+(1, 'AWD1A2AWD132', 'AWD1SAD2A1W', 10000.00, 'Bank BCA', '014', '1234567890', 'Money Rich Admin', 50000.00, '1', '2025-09-26 12:13:38', '2025-09-26 12:13:38');
 
 -- --------------------------------------------------------
 
@@ -264,25 +355,25 @@ CREATE TABLE `products` (
 --
 
 INSERT INTO `products` (`id`, `category_id`, `name`, `amount`, `daily_profit`, `duration`, `required_vip`, `purchase_limit`, `status`, `created_at`, `updated_at`) VALUES
--- Monitor Category (category_id=1, Locked Profit, No Purchase Limit)
-(1, 1, 'Monitor 1', 50000.00, 15000.00, 70, 0, 0, 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
-(2, 1, 'Monitor 2', 200000.00, 68000.00, 60, 0, 0, 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
-(3, 1, 'Monitor 3', 500000.00, 175000.00, 65, 0, 0, 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
-(4, 1, 'Monitor 4', 1250000.00, 432000.00, 65, 0, 0, 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
-(5, 1, 'Monitor 5', 2800000.00, 1050000.00, 65, 0, 0, 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
-(6, 1, 'Monitor 6', 7000000.00, 2660000.00, 50, 0, 0, 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
-(7, 1, 'Monitor 7', 20000000.00, 8000000.00, 50, 0, 0, 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
--- Insight Category (category_id=2, Unlocked Profit, Limited to 1x per product)
-(8, 2, 'Insight 1', 50000.00, 20000.00, 1, 1, 1, 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
-(9, 2, 'Insight 2', 250000.00, 275000.00, 1, 2, 1, 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
-(10, 2, 'Insight 3', 700000.00, 950000.00, 1, 3, 1, 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
-(11, 2, 'Insight 4', 2000000.00, 3600000.00, 1, 4, 1, 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
-(12, 2, 'Insight 5', 8000000.00, 16000000.00, 1, 5, 1, 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
--- AutoPilot Category (category_id=3, All require VIP3, Limited purchases)
-(13, 3, 'AutoPilot 1', 80000.00, 70000.00, 1, 3, 2, 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
-(14, 3, 'AutoPilot 2', 165000.00, 150000.00, 1, 3, 2, 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
-(15, 3, 'AutoPilot 3', 750000.00, 1000000.00, 1, 3, 1, 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
-(16, 3, 'AutoPilot 4', 2450000.00, 4000000.00, 1, 3, 1, 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00');
+-- Neura Category (category_id=1, Locked Profit, No Purchase Limit)
+(1, 1, 'Neura 1', 50000.00, 15000.00, 70, 0, 0, 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
+(2, 1, 'Neura 2', 200000.00, 68000.00, 60, 0, 0, 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
+(3, 1, 'Neura 3', 500000.00, 175000.00, 65, 0, 0, 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
+(4, 1, 'Neura 4', 1250000.00, 432000.00, 65, 0, 0, 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
+(5, 1, 'Neura 5', 2800000.00, 1050000.00, 65, 0, 0, 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
+(6, 1, 'Neura 6', 7000000.00, 2660000.00, 50, 0, 0, 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
+(7, 1, 'Neura 7', 20000000.00, 8000000.00, 50, 0, 0, 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
+-- Finora Category (category_id=2, Unlocked Profit, Limited to 1x per product)
+(8, 2, 'Finora 1', 50000.00, 20000.00, 1, 1, 1, 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
+(9, 2, 'Finora 2', 250000.00, 275000.00, 1, 2, 1, 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
+(10, 2, 'Finora 3', 700000.00, 950000.00, 1, 3, 1, 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
+(11, 2, 'Finora 4', 2000000.00, 3600000.00, 1, 4, 1, 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
+(12, 2, 'Finora 5', 8000000.00, 16000000.00, 1, 5, 1, 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
+-- Corex Category (category_id=3, All require VIP3, Limited purchases)
+(13, 3, 'Corex 1', 80000.00, 70000.00, 1, 3, 2, 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
+(14, 3, 'Corex 2', 165000.00, 150000.00, 1, 3, 2, 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
+(15, 3, 'Corex 3', 750000.00, 1000000.00, 1, 3, 1, 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00'),
+(16, 3, 'Corex 4', 2450000.00, 4000000.00, 1, 3, 1, 'Active', '2025-10-11 00:00:00', '2025-10-11 00:00:00');
 
 -- --------------------------------------------------------
 

@@ -8,6 +8,7 @@ type Setting struct {
 	Company        string    `gorm:"type:text;not null" json:"company"`
 	Popup          string    `gorm:"type:text" json:"popup"` // Filename only (e.g., "popup.png"), not full URL. Frontend will construct the full URL.
 	PopupTitle     string    `gorm:"type:varchar(255)" json:"popup_title"`
+	MinDeposit     float64   `gorm:"type:decimal(15,2);not null;default:10000" json:"min_deposit"`
 	MinWithdraw    float64   `gorm:"type:decimal(15,2);not null" json:"min_withdraw"`
 	MaxWithdraw    float64   `gorm:"type:decimal(15,2);not null" json:"max_withdraw"`
 	WithdrawCharge float64   `gorm:"type:decimal(15,2);not null" json:"withdraw_charge"`

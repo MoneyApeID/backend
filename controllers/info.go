@@ -30,6 +30,7 @@ func InfoPublicHandler(w http.ResponseWriter, r *http.Request) {
 			"company":         setting.Company,
 			"maintenance":     setting.Maintenance,
 			"closed_register": setting.ClosedRegister,
+			"min_deposit":     setting.MinDeposit,
 		},
 	})
 }

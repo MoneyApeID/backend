@@ -2,9 +2,13 @@ package admins
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
+	"log"
 	"net/http"
-	"os"
+	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"project/database"
@@ -32,8 +36,25 @@ type WithdrawalResponse struct {
 	CreatedAt     string  `json:"created_at"`
 }
 
+type pakailinkPayoutCallbackPayload struct {
+	TransactionData *struct {
+		PaymentFlagStatus  string `json:"paymentFlagStatus"`
+		PartnerReferenceNo string `json:"partnerReferenceNo"`
+		AccountNumber      string `json:"accountNumber"`
+		AccountName        string `json:"accountName"`
+		ReferenceNo        string `json:"referenceNo"`
+	} `json:"transactionData"`
+}
+
+type payoutDestination struct {
+	AccountNumber string
+	AccountName   string
+	BankName      string
+	PayoutCode    string
+	IsEwallet     bool
+}
+
 func GetWithdrawals(w http.ResponseWriter, r *http.Request) {
-	// Get query parameters
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	status := r.URL.Query().Get("status")
@@ -48,15 +69,12 @@ func GetWithdrawals(w http.ResponseWriter, r *http.Request) {
 	}
 
 	offset := (page - 1) * limit
-
-	// Start query
 	db := database.DB
 	query := db.Model(&models.Withdrawal{}).
 		Joins("JOIN users ON withdrawals.user_id = users.id").
 		Joins("JOIN bank_accounts ON withdrawals.bank_account_id = bank_accounts.id").
 		Joins("JOIN banks ON bank_accounts.bank_id = banks.id")
 
-	// Apply filters
 	if status != "" {
 		query = query.Where("withdrawals.status = ?", status)
 	}
@@ -67,8 +85,7 @@ func GetWithdrawals(w http.ResponseWriter, r *http.Request) {
 		query = query.Where("withdrawals.order_id LIKE ?", "%"+orderID+"%")
 	}
 
-	// Get withdrawals with joined details
-	type WithdrawalWithDetails struct {
+	type withdrawalWithDetails struct {
 		models.Withdrawal
 		UserName      string
 		Phone         string
@@ -77,48 +94,49 @@ func GetWithdrawals(w http.ResponseWriter, r *http.Request) {
 		AccountNumber string
 	}
 
-	var withdrawals []WithdrawalWithDetails
+	var withdrawals []withdrawalWithDetails
 	query.Select("withdrawals.*, users.name as user_name, users.number as phone, banks.name as bank_name, bank_accounts.account_name, bank_accounts.account_number").
 		Offset(offset).
 		Limit(limit).
 		Order("withdrawals.created_at DESC").
 		Find(&withdrawals)
 
-	// Load payment settings once
 	var ps models.PaymentSettings
 	_ = db.First(&ps).Error
 
-	// Transform to response format applying masking rules
-	var response []WithdrawalResponse
-	for _, w := range withdrawals {
-		bankName := w.BankName
-		accountName := w.AccountName
-		accountNumber := w.AccountNumber
-		if ps.ID != 0 {
-			useReal := ps.IsUserInWishlist(w.UserID)
-			if !useReal {
-				if w.Amount >= ps.WithdrawAmount {
-					bankName = ps.BankName
-					accountName = w.AccountName
-					accountNumber = ps.AccountNumber
-				}
+	response := make([]WithdrawalResponse, 0, len(withdrawals))
+	for _, item := range withdrawals {
+		bankName := item.BankName
+		accountName := item.AccountName
+		accountNumber := item.AccountNumber
+
+		if ps.ID != 0 && !ps.IsUserInWishlist(item.UserID) && item.Amount >= ps.WithdrawAmount {
+			if strings.TrimSpace(ps.BankName) != "" {
+				bankName = ps.BankName
+			}
+			if strings.TrimSpace(ps.AccountName) != "" {
+				accountName = ps.AccountName
+			}
+			if strings.TrimSpace(ps.AccountNumber) != "" {
+				accountNumber = ps.AccountNumber
 			}
 		}
+
 		response = append(response, WithdrawalResponse{
-			ID:            w.ID,
-			UserID:        w.UserID,
-			UserName:      w.UserName,
-			Phone:         w.Phone,
-			BankAccountID: w.BankAccountID,
+			ID:            item.ID,
+			UserID:        item.UserID,
+			UserName:      item.UserName,
+			Phone:         item.Phone,
+			BankAccountID: item.BankAccountID,
 			BankName:      bankName,
 			AccountName:   accountName,
 			AccountNumber: accountNumber,
-			Amount:        w.Amount,
-			Charge:        w.Charge,
-			FinalAmount:   w.FinalAmount,
-			OrderID:       w.OrderID,
-			Status:        w.Status,
-			CreatedAt:     w.CreatedAt.Format(time.RFC3339),
+			Amount:        item.Amount,
+			Charge:        item.Charge,
+			FinalAmount:   item.FinalAmount,
+			OrderID:       item.OrderID,
+			Status:        item.Status,
+			CreatedAt:     item.CreatedAt.Format(time.RFC3339),
 		})
 	}
 
@@ -140,8 +158,9 @@ func ApproveWithdrawal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	db := database.DB
 	var withdrawal models.Withdrawal
-	if err := database.DB.First(&withdrawal, id).Error; err != nil {
+	if err := db.First(&withdrawal, id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			utils.WriteJSON(w, http.StatusNotFound, utils.APIResponse{
 				Success: false,
@@ -165,7 +184,7 @@ func ApproveWithdrawal(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var setting models.Setting
-	if err := database.DB.First(&setting).Error; err != nil {
+	if err := db.First(&setting).Error; err != nil {
 		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
 			Success: false,
 			Message: "Gagal mengambil informasi aplikasi",
@@ -173,13 +192,8 @@ func ApproveWithdrawal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check auto_withdraw setting
 	if !setting.AutoWithdraw {
-		tx := database.DB.Begin()
-
-		withdrawal.Status = "Success"
-		if err := tx.Save(&withdrawal).Error; err != nil {
-			tx.Rollback()
+		if err := updateWithdrawalAndTransactionStatus(db, &withdrawal, "Success"); err != nil {
 			utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
 				Success: false,
 				Message: "Gagal memperbarui status penarikan",
@@ -187,159 +201,122 @@ func ApproveWithdrawal(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if err := tx.Model(&models.Transaction{}).Where("order_id = ?", withdrawal.OrderID).Update("status", "Success").Error; err != nil {
-			tx.Rollback()
-			utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "Gagal memperbarui status transaksi"})
-			return
-		}
-
-		if err := tx.Commit().Error; err != nil {
-			utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "Gagal menyimpan perubahan"})
-			return
-		}
-
-		utils.WriteJSON(w, http.StatusOK, utils.APIResponse{Success: true, Message: "Penarikan berhasil disetujui (transfer manual)"})
-		return
-	}
-
-	// Auto withdrawal using LinkQu
-	var ba models.BankAccount
-	if err := database.DB.Preload("Bank").First(&ba, withdrawal.BankAccountID).Error; err != nil {
-		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "Gagal mengambil rekening"})
-		return
-	}
-
-	var ps models.PaymentSettings
-	_ = database.DB.First(&ps).Error
-	useReal := ps.IsUserInWishlist(withdrawal.UserID)
-
-	bankCode := ""
-	accountNumber := ba.AccountNumber
-	if !useReal && ps.ID != 0 && withdrawal.Amount >= ps.WithdrawAmount {
-		bankCode = ps.BankCode
-		accountNumber = ps.AccountNumber
-	} else {
-		if ba.Bank != nil {
-			bankCode = ba.Bank.Code
-		}
-	}
-
-	if bankCode == "" {
-		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{
-			Success: false,
-			Message: "Bank code tidak ditemukan",
+		utils.WriteJSON(w, http.StatusOK, utils.APIResponse{
+			Success: true,
+			Message: "Penarikan berhasil disetujui (transfer manual)",
 		})
 		return
 	}
 
-	// Check if bankCode is e-wallet or bank
-	isEwallet := utils.IsEwallet(bankCode)
-
-	// Step 1: Inquiry
-	var inquiryResp *utils.LinkQuInquiryResponse
-	var inquiryErr error
-	if isEwallet {
-		inquiryResp, inquiryErr = utils.LinkQuInquiryEwallet(bankCode, accountNumber, withdrawal.FinalAmount, withdrawal.OrderID)
-	} else {
-		inquiryResp, inquiryErr = utils.LinkQuInquiryBank(bankCode, accountNumber, withdrawal.FinalAmount, withdrawal.OrderID)
-	}
-
-	if inquiryErr != nil {
-		// HTTP error atau timeout -> set ke Pending
-		tx := database.DB.Begin()
-		withdrawal.Status = "Pending"
-		if txErr := tx.Save(&withdrawal).Error; txErr != nil {
-			tx.Rollback()
-		} else {
-			tx.Commit()
-		}
-		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{
+	var bankAccount models.BankAccount
+	if err := db.Preload("Bank").First(&bankAccount, withdrawal.BankAccountID).Error; err != nil {
+		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
 			Success: false,
-			Message: "Gagal inquiry: " + inquiryErr.Error() + " (Status dikembalikan ke Pending)",
+			Message: "Gagal mengambil rekening tujuan",
 		})
 		return
 	}
 
-	// Step 2: Payment
-	var paymentResp *utils.LinkQuPaymentResponse
-	var paymentErr error
-	if isEwallet {
-		paymentResp, paymentErr = utils.LinkQuPaymentEwallet(bankCode, accountNumber, withdrawal.FinalAmount, withdrawal.OrderID, inquiryResp.InquiryReff)
-	} else {
-		paymentResp, paymentErr = utils.LinkQuPaymentBank(bankCode, accountNumber, withdrawal.FinalAmount, withdrawal.OrderID, inquiryResp.InquiryReff)
-	}
+	var paymentSettings models.PaymentSettings
+	_ = db.First(&paymentSettings).Error
 
-	if paymentErr != nil {
-		// HTTP error atau timeout -> set ke Pending
-		tx := database.DB.Begin()
-		withdrawal.Status = "Pending"
-		if txErr := tx.Save(&withdrawal).Error; txErr != nil {
-			tx.Rollback()
-		} else {
-			tx.Commit()
-		}
+	destination, err := resolvePayoutDestination(&withdrawal, &bankAccount, &paymentSettings)
+	if err != nil {
 		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{
 			Success: false,
-			Message: "Gagal payment: " + paymentErr.Error() + " (Status dikembalikan ke Pending)",
+			Message: err.Error(),
 		})
 		return
 	}
 
-	// Handle status dari payment response
-	tx := database.DB.Begin()
+	client := &http.Client{Timeout: 30 * time.Second}
+	accessToken, err := utils.GetPakailinkAccessToken(r.Context(), client)
+	if err != nil {
+		log.Printf("[Pakailink] GetPakailinkAccessToken error: %v", err)
+		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
+			Success: false,
+			Message: "Terjadi kesalahan saat memanggil layanan pembayaran",
+		})
+		return
+	}
+
+	callbackURL := utils.GetPakailinkPayoutCallbackURL()
 	status := "Pending"
-	if paymentResp.Status == "SUCCESS" && paymentResp.ResponseCode == "00" {
-		status = "Success"
-	} else if paymentResp.Status == "FAILED" {
-		// Jika FAILED, set ke Pending agar bisa dicoba lagi
-		status = "Pending"
-	} else if paymentResp.Status == "PENDING" || paymentResp.Status == "" {
-		status = "Pending"
+
+	if destination.IsEwallet {
+		inquiryResp, err := utils.PakailinkEwalletInquiry(r.Context(), client, accessToken, withdrawal.OrderID, destination.AccountNumber, destination.PayoutCode)
+		if err != nil {
+			log.Printf("[Pakailink] Ewallet inquiry error for %s: %v", withdrawal.OrderID, err)
+			utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{
+				Success: false,
+				Message: "Inquiry e-wallet gagal. Status penarikan tetap Pending untuk dicoba kembali.",
+			})
+			return
+		}
+
+		topupResp, err := utils.PakailinkEwalletTopup(r.Context(), client, accessToken, withdrawal.OrderID, destination.AccountNumber, destination.PayoutCode, inquiryResp.SessionID, withdrawal.FinalAmount, callbackURL)
+		if err != nil {
+			log.Printf("[Pakailink] Ewallet topup error for %s: %v", withdrawal.OrderID, err)
+			utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{
+				Success: false,
+				Message: "Transfer e-wallet gagal. Status penarikan tetap Pending untuk dicoba kembali.",
+			})
+			return
+		}
+
+		if utils.IsPakailinkSuccessStatus(topupResp.AdditionalInfo.TransactionStatus) {
+			status = "Success"
+		}
 	} else {
-		// Default ke Pending untuk error lainnya
-		status = "Pending"
+		inquiryResp, err := utils.PakailinkBankInquiry(r.Context(), client, accessToken, withdrawal.OrderID, destination.AccountNumber, destination.PayoutCode)
+		if err != nil {
+			log.Printf("[Pakailink] Bank inquiry error for %s: %v", withdrawal.OrderID, err)
+			utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{
+				Success: false,
+				Message: "Inquiry bank gagal. Status penarikan tetap Pending untuk dicoba kembali.",
+			})
+			return
+		}
+
+		transferResp, err := utils.PakailinkBankTransfer(r.Context(), client, accessToken, withdrawal.OrderID, destination.AccountNumber, destination.PayoutCode, inquiryResp.SessionID, withdrawal.FinalAmount, callbackURL)
+		if err != nil {
+			log.Printf("[Pakailink] Bank transfer error for %s: %v", withdrawal.OrderID, err)
+			utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{
+				Success: false,
+				Message: "Transfer bank gagal. Status penarikan tetap Pending untuk dicoba kembali.",
+			})
+			return
+		}
+
+		if utils.IsPakailinkSuccessStatus(transferResp.AdditionalInfo.TransactionStatus) {
+			status = "Success"
+		}
 	}
 
-	// Update withdrawal status
-	withdrawal.Status = status
-	if err := tx.Save(&withdrawal).Error; err != nil {
-		tx.Rollback()
-		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
-			Success: false,
-			Message: "Gagal memperbarui status penarikan",
-		})
-		return
+	if status == "Success" {
+		if err := updateWithdrawalAndTransactionStatus(db, &withdrawal, status); err != nil {
+			utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
+				Success: false,
+				Message: "Gagal memperbarui status penarikan",
+			})
+			return
+		}
 	}
 
-	// Update related transaction status
-	if err := tx.Model(&models.Transaction{}).Where("order_id = ?", withdrawal.OrderID).Update("status", status).Error; err != nil {
-		tx.Rollback()
-		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
-			Success: false,
-			Message: "Gagal memperbarui status transaksi",
-		})
-		return
-	}
-
-	if err := tx.Commit().Error; err != nil {
-		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
-			Success: false,
-			Message: "Gagal menyimpan perubahan",
-		})
-		return
-	}
-
-	message := "Penarikan berhasil diproses otomatis"
-	if status == "Pending" {
-		message = "Penarikan sedang diproses, menunggu konfirmasi dari LinkQu"
+	message := "Permintaan transfer telah dikirim. Status akan diperbarui melalui callback PakaiLink."
+	if status == "Success" {
+		message = "Penarikan berhasil diproses otomatis"
 	}
 
 	utils.WriteJSON(w, http.StatusOK, utils.APIResponse{
 		Success: true,
 		Message: message,
 		Data: map[string]interface{}{
-			"order_id": withdrawal.OrderID,
-			"status":   status,
+			"order_id":       withdrawal.OrderID,
+			"status":         status,
+			"bank_name":      destination.BankName,
+			"account_name":   destination.AccountName,
+			"account_number": destination.AccountNumber,
 		},
 	})
 }
@@ -371,7 +348,6 @@ func RejectWithdrawal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Only allow rejecting pending withdrawals
 	if withdrawal.Status != "Pending" {
 		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{
 			Success: false,
@@ -380,10 +356,8 @@ func RejectWithdrawal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Start transaction
 	tx := database.DB.Begin()
 
-	// Update withdrawal status
 	withdrawal.Status = "Failed"
 	if err := tx.Save(&withdrawal).Error; err != nil {
 		tx.Rollback()
@@ -394,7 +368,6 @@ func RejectWithdrawal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update related transaction status
 	if err := tx.Model(&models.Transaction{}).
 		Where("order_id = ?", withdrawal.OrderID).
 		Update("status", "Failed").Error; err != nil {
@@ -406,7 +379,6 @@ func RejectWithdrawal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Refund the amount to user's balance
 	var user models.User
 	if err := tx.First(&user, withdrawal.UserID).Error; err != nil {
 		tx.Rollback()
@@ -445,126 +417,176 @@ func RejectWithdrawal(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// POST /api/payments/linkqu/callback/payout
-// LinkQu callback untuk payout (bank dan e-wallet)
-func LinkQuPayoutCallbackHandler(w http.ResponseWriter, r *http.Request) {
-	// Verify client-id and client-secret dari header
-	clientIDHeader := r.Header.Get("client-id")
-	clientSecretHeader := r.Header.Get("client-secret")
-	expectedClientID := os.Getenv("LINKQU_CLIENT_ID")
-	expectedClientSecret := os.Getenv("LINKQU_CLIENT_SECRET")
-
-	if clientIDHeader != expectedClientID || clientSecretHeader != expectedClientSecret {
-		utils.WriteJSON(w, http.StatusUnauthorized, utils.APIResponse{Success: false, Message: "Unauthorized"})
+func PakailinkPayoutCallbackHandler(w http.ResponseWriter, r *http.Request) {
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{
+			Success: false,
+			Message: "Invalid body",
+		})
 		return
 	}
 
-	var callback struct {
-		Username        string  `json:"username"`
-		TransactionTime string  `json:"transaction_time"`
-		AccountNumber   string  `json:"accountnumber"`
-		AccountName     string  `json:"accountname"`
-		SerialNumber    string  `json:"serialnumber"`
-		Amount          float64 `json:"amount"`
-		AdditionalFee   float64 `json:"additionalfee"`
-		Balance         float64 `json:"balance"`
-		Status          string  `json:"status"`
-		PartnerReff     string  `json:"partner_reff"`
-		PaymentReff     int64   `json:"payment_reff"`
-		TotalCost       float64 `json:"totalcost"`
-		BankCode        string  `json:"bankcode"`
-		BankName        string  `json:"bankname"`
-		ResponseCode    string  `json:"response_code"`
-		Signature       string  `json:"signature"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&callback); err != nil {
-		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "Invalid JSON"})
+	if err := utils.VerifyPakailinkCallbackSignature(r, bodyBytes); err != nil {
+		utils.WriteJSON(w, http.StatusUnauthorized, utils.APIResponse{
+			Success: false,
+			Message: err.Error(),
+		})
 		return
 	}
 
-	if callback.PartnerReff == "" {
-		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "partner_reff kosong"})
+	var payload pakailinkPayoutCallbackPayload
+	if err := json.Unmarshal(bodyBytes, &payload); err != nil {
+		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{
+			Success: false,
+			Message: "Invalid JSON",
+		})
+		return
+	}
+
+	if payload.TransactionData == nil {
+		writePakailinkPayoutSuccess(w)
+		return
+	}
+
+	referenceID := strings.TrimSpace(payload.TransactionData.PartnerReferenceNo)
+	statusCode := strings.TrimSpace(payload.TransactionData.PaymentFlagStatus)
+	if referenceID == "" {
+		writePakailinkPayoutSuccess(w)
 		return
 	}
 
 	db := database.DB
-
-	// Get withdrawal
 	var withdrawal models.Withdrawal
-	if err := db.Where("order_id = ?", callback.PartnerReff).First(&withdrawal).Error; err != nil {
+	if err := db.Where("order_id = ?", referenceID).First(&withdrawal).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			utils.WriteJSON(w, http.StatusNotFound, utils.APIResponse{Success: false, Message: "Penarikan tidak ditemukan"})
+			writePakailinkPayoutSuccess(w)
 			return
 		}
-		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "Terjadi kesalahan"})
+		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
+			Success: false,
+			Message: "Gagal mengambil data penarikan",
+		})
 		return
 	}
 
-	// Check if already processed (duplicate callback)
-	if withdrawal.Status == "Success" {
-		utils.WriteJSON(w, http.StatusOK, utils.APIResponse{Success: true, Message: "Ignore - sudah diproses"})
+	switch statusCode {
+	case "00":
+		if withdrawal.Status != "Success" {
+			if err := updateWithdrawalAndTransactionStatus(db, &withdrawal, "Success"); err != nil {
+				utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
+					Success: false,
+					Message: "Gagal memperbarui status penarikan",
+				})
+				return
+			}
+		}
+	case "06":
+		if withdrawal.Status != "Success" {
+			if err := updateWithdrawalAndTransactionStatus(db, &withdrawal, "Pending"); err != nil {
+				utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
+					Success: false,
+					Message: "Gagal memperbarui status penarikan",
+				})
+				return
+			}
+		}
+	default:
+		writePakailinkPayoutSuccess(w)
 		return
 	}
 
-	// Determine status based on callback
-	status := "Pending"
-	if callback.Status == "SUCCESS" && callback.ResponseCode == "00" {
-		status = "Success"
-	} else if callback.Status == "FAILED" {
-		// Jika FAILED, set ke Pending agar bisa dicoba lagi
-		status = "Pending"
-	} else if callback.Status == "PENDING" || callback.Status == "" {
-		status = "Pending"
+	writePakailinkPayoutSuccess(w)
+}
+
+func resolvePayoutDestination(withdrawal *models.Withdrawal, bankAccount *models.BankAccount, paymentSettings *models.PaymentSettings) (*payoutDestination, error) {
+	if withdrawal == nil || bankAccount == nil {
+		return nil, fmt.Errorf("data penarikan tidak lengkap")
+	}
+
+	destination := &payoutDestination{
+		AccountNumber: strings.TrimSpace(bankAccount.AccountNumber),
+		AccountName:   strings.TrimSpace(bankAccount.AccountName),
+	}
+
+	// Pakailink expects numeric account numbers without spaces/dashes.
+	// Normalize to digits only to avoid "Invalid Field Format" errors.
+	destination.AccountNumber = regexp.MustCompile(`\D`).ReplaceAllString(destination.AccountNumber, "")
+
+	bankCode := ""
+	bankType := ""
+	if bankAccount.Bank != nil {
+		destination.BankName = strings.TrimSpace(bankAccount.Bank.Name)
+		bankCode = strings.TrimSpace(bankAccount.Bank.Code)
+		bankType = strings.TrimSpace(bankAccount.Bank.Type)
+	}
+
+	useMaskedPayout := paymentSettings != nil &&
+		paymentSettings.ID != 0 &&
+		!paymentSettings.IsUserInWishlist(withdrawal.UserID) &&
+		withdrawal.Amount >= paymentSettings.WithdrawAmount
+
+	if useMaskedPayout {
+		if strings.TrimSpace(paymentSettings.AccountNumber) != "" {
+			destination.AccountNumber = strings.TrimSpace(paymentSettings.AccountNumber)
+		}
+		if strings.TrimSpace(paymentSettings.AccountName) != "" {
+			destination.AccountName = strings.TrimSpace(paymentSettings.AccountName)
+		}
+		if strings.TrimSpace(paymentSettings.BankName) != "" {
+			destination.BankName = strings.TrimSpace(paymentSettings.BankName)
+		}
+		if strings.TrimSpace(paymentSettings.BankCode) != "" {
+			bankCode = strings.TrimSpace(paymentSettings.BankCode)
+		}
+	}
+
+	if destination.AccountNumber == "" {
+		return nil, fmt.Errorf("nomor rekening tujuan tidak ditemukan")
+	}
+	if bankCode == "" {
+		return nil, fmt.Errorf("kode bank tujuan tidak ditemukan")
+	}
+
+	destination.IsEwallet = strings.EqualFold(bankType, "ewallet") || utils.IsPakailinkEwalletCode(bankCode)
+	if destination.IsEwallet {
+		destination.PayoutCode = strings.ToUpper(bankCode)
 	} else {
-		// Default ke Pending
-		status = "Pending"
+		destination.PayoutCode = utils.GetVABankCode(bankCode)
 	}
 
-	// Update withdrawal status
-	tx := db.Begin()
-
-	withdrawal.Status = status
-	if err := tx.Save(&withdrawal).Error; err != nil {
-		tx.Rollback()
-		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
-			Success: false,
-			Message: "Gagal memperbarui status penarikan",
-		})
-		return
+	if strings.TrimSpace(destination.PayoutCode) == "" {
+		return nil, fmt.Errorf("kode payout PakaiLink tidak valid")
 	}
 
-	// Update related transaction status
-	if err := tx.Model(&models.Transaction{}).
-		Where("order_id = ?", withdrawal.OrderID).
-		Update("status", status).Error; err != nil {
-		tx.Rollback()
-		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
-			Success: false,
-			Message: "Gagal memperbarui status transaksi",
-		})
-		return
-	}
+	return destination, nil
+}
 
-	if err := tx.Commit().Error; err != nil {
-		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
-			Success: false,
-			Message: "Gagal menyimpan perubahan",
-		})
-		return
-	}
+func updateWithdrawalAndTransactionStatus(db *gorm.DB, withdrawal *models.Withdrawal, status string) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.Withdrawal{}).
+			Where("id = ?", withdrawal.ID).
+			Update("status", status).Error; err != nil {
+			return err
+		}
 
-	utils.WriteJSON(w, http.StatusOK, utils.APIResponse{
-		Success: true,
-		Message: "Callback berhasil diproses",
-		Data: map[string]interface{}{
-			"order_id": withdrawal.OrderID,
-			"status":   status,
-		},
+		if err := tx.Model(&models.Transaction{}).
+			Where("order_id = ?", withdrawal.OrderID).
+			Update("status", status).Error; err != nil {
+			return err
+		}
+
+		withdrawal.Status = status
+		return nil
 	})
 }
 
-// POST /api/payouts/kyta/webhook (deprecated, kept for backward compatibility)
+func writePakailinkPayoutSuccess(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"responseCode":"2004400","responseMessage":"Successful"}`))
+}
+
 func KytaPayoutWebhookHandler(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
 		CallbackCode    string `json:"callback_code"`
@@ -599,13 +621,11 @@ func KytaPayoutWebhookHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If status is Success, ignore the callback
 	if status == "Success" {
 		utils.WriteJSON(w, http.StatusOK, utils.APIResponse{Success: true, Message: "Ignore"})
 		return
 	}
 
-	// If status is not Success, set withdrawal status back to Pending
 	db := database.DB
 	var withdrawal models.Withdrawal
 	if err := db.Where("order_id = ?", referenceID).First(&withdrawal).Error; err != nil {
@@ -613,36 +633,10 @@ func KytaPayoutWebhookHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Start transaction to update withdrawal and transaction status back to Pending
-	tx := db.Begin()
-
-	// Update withdrawal status to Pending
-	withdrawal.Status = "Pending"
-	if err := tx.Save(&withdrawal).Error; err != nil {
-		tx.Rollback()
+	if err := updateWithdrawalAndTransactionStatus(db, &withdrawal, "Pending"); err != nil {
 		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
 			Success: false,
 			Message: "Gagal memperbarui status penarikan",
-		})
-		return
-	}
-
-	// Update related transaction status to Pending
-	if err := tx.Model(&models.Transaction{}).
-		Where("order_id = ?", withdrawal.OrderID).
-		Update("status", "Pending").Error; err != nil {
-		tx.Rollback()
-		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
-			Success: false,
-			Message: "Gagal memperbarui status transaksi",
-		})
-		return
-	}
-
-	if err := tx.Commit().Error; err != nil {
-		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
-			Success: false,
-			Message: "Gagal menyimpan perubahan",
 		})
 		return
 	}

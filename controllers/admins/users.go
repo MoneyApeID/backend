@@ -144,7 +144,7 @@ func GetUserDetail(w http.ResponseWriter, r *http.Request) {
 			}
 		}(),
 		Balance: user.Balance,
-		Income: user.Income,
+		Income:  user.Income,
 		Level: func() int {
 			if user.Level != nil {
 				return int(*user.Level)
@@ -505,5 +505,49 @@ func UpdateUserPassword(w http.ResponseWriter, r *http.Request) {
 	utils.WriteJSON(w, http.StatusOK, utils.APIResponse{
 		Success: true,
 		Message: "Berhasil memperbarui password pengguna",
+	})
+}
+
+func LoginAsUser(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id, err := strconv.ParseUint(vars["id"], 10, 32)
+	if err != nil {
+		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{
+			Success: false,
+			Message: "ID pengguna tidak valid",
+		})
+		return
+	}
+
+	var user models.User
+	if err := database.DB.First(&user, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			utils.WriteJSON(w, http.StatusNotFound, utils.APIResponse{
+				Success: false,
+				Message: "Pengguna tidak ditemukan",
+			})
+			return
+		}
+
+		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
+			Success: false,
+			Message: "Gagal mengambil data pengguna",
+		})
+		return
+	}
+
+	sessionPayload, err := utils.BuildUserSessionPayload(user)
+	if err != nil {
+		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
+			Success: false,
+			Message: "Gagal membuat sesi pengguna",
+		})
+		return
+	}
+
+	utils.WriteJSON(w, http.StatusOK, utils.APIResponse{
+		Success: true,
+		Message: "Berhasil masuk sebagai pengguna",
+		Data:    sessionPayload,
 	})
 }

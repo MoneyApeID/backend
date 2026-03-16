@@ -14,16 +14,20 @@ import (
 )
 
 type BankResponse struct {
-	ID     uint   `json:"id"`
-	Name   string `json:"name"`
-	Code   string `json:"code"`
-	Status string `json:"status"`
+	ID        uint   `json:"id"`
+	Name      string `json:"name"`
+	ShortName string `json:"short_name,omitempty"`
+	Type      string `json:"type,omitempty"`
+	Code      string `json:"code"`
+	Status    string `json:"status"`
 }
 
 type CreateBankRequest struct {
-	Name   string `json:"name"`
-	Code   string `json:"code"`
-	Status string `json:"status"`
+	Name      string `json:"name"`
+	ShortName string `json:"short_name"`
+	Type      string `json:"type"`
+	Code      string `json:"code"`
+	Status    string `json:"status"`
 }
 
 func GetBanks(w http.ResponseWriter, r *http.Request) {
@@ -39,10 +43,12 @@ func GetBanks(w http.ResponseWriter, r *http.Request) {
 	var response []BankResponse
 	for _, bank := range banks {
 		response = append(response, BankResponse{
-			ID:     bank.ID,
-			Name:   bank.Name,
-			Code:   bank.Code,
-			Status: bank.Status,
+			ID:        bank.ID,
+			Name:      bank.Name,
+			ShortName: bank.ShortName,
+			Type:      bank.Type,
+			Code:      bank.Code,
+			Status:    bank.Status,
 		})
 	}
 
@@ -62,6 +68,12 @@ func CreateBank(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	if req.Type == "" {
+		req.Type = "bank"
+	}
+	if req.Status == "" {
+		req.Status = "Active"
+	}
 
 	// Check for duplicate bank code
 	var existingBank models.Bank
@@ -74,9 +86,11 @@ func CreateBank(w http.ResponseWriter, r *http.Request) {
 	}
 
 	bank := models.Bank{
-		Name:   req.Name,
-		Code:   req.Code,
-		Status: req.Status,
+		Name:      req.Name,
+		ShortName: req.ShortName,
+		Type:      req.Type,
+		Code:      req.Code,
+		Status:    req.Status,
 	}
 
 	if err := database.DB.Create(&bank).Error; err != nil {
@@ -91,10 +105,12 @@ func CreateBank(w http.ResponseWriter, r *http.Request) {
 		Success: true,
 		Message: "Bank berhasil ditambahkan",
 		Data: BankResponse{
-			ID:     bank.ID,
-			Name:   bank.Name,
-			Code:   bank.Code,
-			Status: bank.Status,
+			ID:        bank.ID,
+			Name:      bank.Name,
+			ShortName: bank.ShortName,
+			Type:      bank.Type,
+			Code:      bank.Code,
+			Status:    bank.Status,
 		},
 	})
 }
@@ -117,6 +133,12 @@ func UpdateBank(w http.ResponseWriter, r *http.Request) {
 			Message: "Invalid request body",
 		})
 		return
+	}
+	if req.Type == "" {
+		req.Type = "bank"
+	}
+	if req.Status == "" {
+		req.Status = "Active"
 	}
 
 	var bank models.Bank
@@ -146,6 +168,8 @@ func UpdateBank(w http.ResponseWriter, r *http.Request) {
 	}
 
 	bank.Name = req.Name
+	bank.ShortName = req.ShortName
+	bank.Type = req.Type
 	bank.Code = req.Code
 	bank.Status = req.Status
 
@@ -161,10 +185,12 @@ func UpdateBank(w http.ResponseWriter, r *http.Request) {
 		Success: true,
 		Message: "Bank berhasil diperbarui",
 		Data: map[string]interface{}{
-			"id":     bank.ID,
-			"name":   bank.Name,
-			"code":   bank.Code,
-			"status": bank.Status,
+			"id":         bank.ID,
+			"name":       bank.Name,
+			"short_name": bank.ShortName,
+			"type":       bank.Type,
+			"code":       bank.Code,
+			"status":     bank.Status,
 		},
 	})
 }
