@@ -268,7 +268,7 @@ func ApproveWithdrawal(w http.ResponseWriter, r *http.Request) {
 			status = "Success"
 		}
 	} else {
-		inquiryResp, err := utils.PakailinkBankInquiry(r.Context(), client, accessToken, withdrawal.OrderID, destination.AccountNumber, destination.PayoutCode, withdrawal.FinalAmount)
+		inquiryResp, err := utils.PakailinkBankInquiry(r.Context(), client, accessToken, withdrawal.OrderID, destination.AccountNumber, destination.PayoutCode)
 		if err != nil {
 			log.Printf("[Pakailink] Bank inquiry error for %s: %v", withdrawal.OrderID, err)
 			utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{

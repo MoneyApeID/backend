@@ -86,7 +86,7 @@ func AdminWithdrawInquiryHandler(w http.ResponseWriter, r *http.Request) {
 		respData["account_name"] = inquiryResp.CustomerName
 	} else {
 		// Bank inquiry
-		inquiryResp, err := utils.PakailinkBankInquiry(r.Context(), client, accessToken, partnerRefNo, req.AccountNumber, req.BankCode, req.Amount)
+		inquiryResp, err := utils.PakailinkBankInquiry(r.Context(), client, accessToken, partnerRefNo, req.AccountNumber, req.BankCode)
 		if err != nil {
 			log.Printf("[AdminWithdraw] BankInquiry error: %v", err)
 			utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "Inquiry bank gagal: " + err.Error()})

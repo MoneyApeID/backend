@@ -563,7 +563,7 @@ type PakailinkBankInquiryResponse struct {
 	BeneficiaryBankName    string `json:"beneficiaryBankName"`
 }
 
-func PakailinkBankInquiry(ctx context.Context, client *http.Client, accessToken, partnerRefNo, accountNumber, bankCode string, amount float64) (*PakailinkBankInquiryResponse, error) {
+func PakailinkBankInquiry(ctx context.Context, client *http.Client, accessToken, partnerRefNo, accountNumber, bankCode string) (*PakailinkBankInquiryResponse, error) {
 	cfg, err := getPakailinkConfig()
 	if err != nil {
 		return nil, err
@@ -572,27 +572,18 @@ func PakailinkBankInquiry(ctx context.Context, client *http.Client, accessToken,
 	path := "/snap/v1.0/emoney/bank-account-inquiry"
 	url := cfg.BaseURL + path
 
-	type inquiryAmount struct {
-		Value    string `json:"value"`
-		Currency string `json:"currency"`
-	}
 	type inquiryAdditionalInfo struct {
 		BeneficiaryBankCode string `json:"beneficiaryBankCode"`
 	}
 	type inquiryPayload struct {
 		PartnerReferenceNo   string                `json:"partnerReferenceNo"`
 		BeneficiaryAccountNo string                `json:"beneficiaryAccountNumber"`
-		Amount               inquiryAmount         `json:"amount"`
 		AdditionalInfo       inquiryAdditionalInfo `json:"additionalInfo"`
 	}
 
 	bodyObject := inquiryPayload{
 		PartnerReferenceNo:   partnerRefNo,
 		BeneficiaryAccountNo: accountNumber,
-		Amount: inquiryAmount{
-			Value:    fmt.Sprintf("%.2f", amount),
-			Currency: "IDR",
-		},
 		AdditionalInfo:       inquiryAdditionalInfo{BeneficiaryBankCode: bankCode},
 	}
 	body, _ := json.Marshal(bodyObject)
@@ -668,6 +659,7 @@ func PakailinkBankTransfer(ctx context.Context, client *http.Client, accessToken
 		PartnerReferenceNo       string                 `json:"partnerReferenceNo"`
 		BeneficiaryAccountNumber string                 `json:"beneficiaryAccountNumber"`
 		BeneficiaryBankCode      string                 `json:"beneficiaryBankCode"`
+		SessionID                string                 `json:"sessionId"`
 		Amount                   transferAmount         `json:"amount"`
 		AdditionalInfo           transferAdditionalInfo `json:"additionalInfo"`
 	}
@@ -676,6 +668,7 @@ func PakailinkBankTransfer(ctx context.Context, client *http.Client, accessToken
 		PartnerReferenceNo:       partnerRefNo,
 		BeneficiaryAccountNumber: accountNumber,
 		BeneficiaryBankCode:      bankCode,
+		SessionID:                sessionID,
 		Amount: transferAmount{
 			Value:    fmt.Sprintf("%.2f", amount),
 			Currency: "IDR",
