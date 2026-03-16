@@ -17,13 +17,12 @@ import (
 	"fmt"
 	"io"
 	"log"
+	mathrand "math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 const (
@@ -113,7 +112,23 @@ func IsPakailinkEwalletCode(code string) bool {
 }
 
 func PakailinkTimestamp() string {
-	return time.Now().UTC().Format("2006-01-02T15:04:05Z")
+	loc, _ := time.LoadLocation("Asia/Jakarta")
+	return time.Now().In(loc).Format("2006-01-02T15:04:05-07:00")
+}
+
+func generateExternalID() string {
+	ts := time.Now().UnixMilli()
+	return fmt.Sprintf("%d", ts)
+}
+
+func GeneratePartnerRefNo() string {
+	ts := time.Now().UnixMilli()
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	result := make([]byte, 28)
+	for i := 0; i < 28; i++ {
+		result[i] = charset[mathrand.Intn(len(charset))]
+	}
+	return fmt.Sprintf("%s%d", string(result), ts%10000)
 }
 
 func createAsymmetricSignature(stringToSign, privateKeyPath string) (string, error) {
@@ -172,14 +187,6 @@ func minifyJSON(body []byte) []byte {
 	}
 
 	return minified
-}
-
-func generateExternalID() string {
-	return uuid.New().String()
-}
-
-func GeneratePartnerRefNo() string {
-	return uuid.New().String()
 }
 
 type PakailinkAccessTokenResponse struct {
