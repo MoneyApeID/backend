@@ -656,23 +656,39 @@ func PakailinkBankTransfer(ctx context.Context, client *http.Client, accessToken
 
 	path := "/snap/v1.0/emoney/transfer-bank"
 	url := cfg.BaseURL + path
-	additionalInfo := map[string]interface{}{"remark": ""}
-	if strings.TrimSpace(callbackURL) != "" {
-		additionalInfo["callbackUrl"] = callbackURL
+	type transferAmount struct {
+		Value    string `json:"value"`
+		Currency string `json:"currency"`
 	}
-	bodyObject := map[string]interface{}{
-		"partnerReferenceNo":       partnerRefNo,
-		"beneficiaryAccountNumber": accountNumber,
-		"beneficiaryBankCode":      bankCode,
-		"amount":                   map[string]string{"value": fmt.Sprintf("%.2f", amount), "currency": "IDR"},
-		"additionalInfo":           additionalInfo,
+	type transferAdditionalInfo struct {
+		CallbackUrl string `json:"callbackUrl,omitempty"`
+		Remark      string `json:"remark"`
 	}
-	if strings.TrimSpace(sessionID) != "" {
-		bodyObject["sessionId"] = sessionID
+	type transferPayload struct {
+		PartnerReferenceNo       string                 `json:"partnerReferenceNo"`
+		BeneficiaryAccountNumber string                 `json:"beneficiaryAccountNumber"`
+		BeneficiaryBankCode      string                 `json:"beneficiaryBankCode"`
+		Amount                   transferAmount         `json:"amount"`
+		AdditionalInfo           transferAdditionalInfo `json:"additionalInfo"`
+		SessionId                string                 `json:"sessionId,omitempty"`
+	}
+
+	bodyObject := transferPayload{
+		PartnerReferenceNo:       partnerRefNo,
+		BeneficiaryAccountNumber: accountNumber,
+		BeneficiaryBankCode:      bankCode,
+		Amount: transferAmount{
+			Value:    fmt.Sprintf("%.2f", amount),
+			Currency: "IDR",
+		},
+		AdditionalInfo: transferAdditionalInfo{
+			CallbackUrl: strings.TrimSpace(callbackURL),
+			Remark:      "",
+		},
+		SessionId: strings.TrimSpace(sessionID),
 	}
 
 	body, _ := json.Marshal(bodyObject)
-	body = minifyJSON(body)
 	timestamp := PakailinkTimestamp()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
