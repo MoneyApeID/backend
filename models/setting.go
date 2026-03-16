@@ -18,8 +18,11 @@ type Setting struct {
 	LinkCS         string    `gorm:"type:text;not null" json:"link_cs"`
 	LinkGroup      string    `gorm:"type:text;not null" json:"link_group"`
 	LinkApp        string    `gorm:"type:text;not null" json:"link_app"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	WithdrawStartTime string    `gorm:"type:varchar(10);default:'12:00'" json:"withdraw_start_time"`
+	WithdrawEndTime   string    `gorm:"type:varchar(10);default:'17:00'" json:"withdraw_end_time"`
+	WithdrawDays      string    `gorm:"type:varchar(255);default:'1,2,3,4,5,6'" json:"withdraw_days"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 func (Setting) TableName() string {

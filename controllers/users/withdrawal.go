@@ -10,6 +10,7 @@ import (
 	"project/models"
 	"project/utils"
 	"strconv"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -53,14 +54,56 @@ func WithdrawalHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	loc, _ := time.LoadLocation("Asia/Jakarta")
 	now := time.Now().In(loc)
-	hour := now.Hour()
-	if hour < 12 || hour >= 17 {
-		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "Penarikan hanya dapat dilakukan pada pukul 12:00 - 17:00 WIB"})
-		return
+
+	// Default times if empty
+	startTimeStr := setting.WithdrawStartTime
+	if startTimeStr == "" {
+		startTimeStr = "12:00"
+	}
+	endTimeStr := setting.WithdrawEndTime
+	if endTimeStr == "" {
+		endTimeStr = "17:00"
 	}
 
-	if now.Weekday() == time.Sunday {
-		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "Penarikan hanya dapat dilakukan pada hari Senin sampai Sabtu"})
+	start, errStart := time.Parse("15:04", startTimeStr)
+	end, errEnd := time.Parse("15:04", endTimeStr)
+	
+	if errStart == nil && errEnd == nil {
+		currentHourMin := now.Hour()*60 + now.Minute()
+		startMins := start.Hour()*60 + start.Minute()
+		endMins := end.Hour()*60 + end.Minute()
+		
+		// Handle cross-midnight
+		if startMins <= endMins {
+			if currentHourMin < startMins || currentHourMin >= endMins {
+				utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: fmt.Sprintf("Penarikan hanya dapat dilakukan pada pukul %s - %s WIB", startTimeStr, endTimeStr)})
+				return
+			}
+		} else {
+			if currentHourMin < startMins && currentHourMin >= endMins {
+				utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: fmt.Sprintf("Penarikan hanya dapat dilakukan pada pukul %s - %s WIB", startTimeStr, endTimeStr)})
+				return
+			}
+		}
+	}
+
+	// Check days (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
+	allowedDays := setting.WithdrawDays
+	if allowedDays == "" {
+		allowedDays = "1,2,3,4,5,6" // Default Senin-Sabtu
+	}
+	
+	currentDayStr := fmt.Sprintf("%d", int(now.Weekday()))
+	isDayAllowed := false
+	for _, day := range strings.Split(allowedDays, ",") {
+		if strings.TrimSpace(day) == currentDayStr {
+			isDayAllowed = true
+			break
+		}
+	}
+	
+	if !isDayAllowed {
+		utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "Penarikan tidak dapat dilakukan pada hari ini."})
 		return
 	}
 

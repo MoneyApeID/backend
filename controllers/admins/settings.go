@@ -43,9 +43,12 @@ func GetSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		"auto_withdraw":   setting.AutoWithdraw,
 		"maintenance":     setting.Maintenance,
 		"closed_register": setting.ClosedRegister,
-		"link_cs":         setting.LinkCS,
-		"link_group":      setting.LinkGroup,
-		"link_app":        setting.LinkApp,
+		"link_cs":             setting.LinkCS,
+		"link_group":          setting.LinkGroup,
+		"link_app":            setting.LinkApp,
+		"withdraw_start_time": setting.WithdrawStartTime,
+		"withdraw_end_time":   setting.WithdrawEndTime,
+		"withdraw_days":       setting.WithdrawDays,
 	}
 
 	utils.WriteJSON(w, http.StatusOK, utils.APIResponse{
@@ -126,6 +129,15 @@ func UpdateSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if linkApp := strings.TrimSpace(r.FormValue("link_app")); linkApp != "" {
 		setting.LinkApp = linkApp
+	}
+	if withdrawStartTime := strings.TrimSpace(r.FormValue("withdraw_start_time")); withdrawStartTime != "" {
+		setting.WithdrawStartTime = withdrawStartTime
+	}
+	if withdrawEndTime := strings.TrimSpace(r.FormValue("withdraw_end_time")); withdrawEndTime != "" {
+		setting.WithdrawEndTime = withdrawEndTime
+	}
+	if withdrawDays := strings.TrimSpace(r.FormValue("withdraw_days")); withdrawDays != "" {
+		setting.WithdrawDays = withdrawDays
 	}
 
 	// Handle popup image upload (optional)
@@ -226,10 +238,13 @@ func UpdateSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		"withdraw_charge": setting.WithdrawCharge,
 		"auto_withdraw":   setting.AutoWithdraw,
 		"maintenance":     setting.Maintenance,
-		"closed_register": setting.ClosedRegister,
-		"link_cs":         setting.LinkCS,
-		"link_group":      setting.LinkGroup,
-		"link_app":        setting.LinkApp,
+		"closed_register":     setting.ClosedRegister,
+		"link_cs":             setting.LinkCS,
+		"link_group":          setting.LinkGroup,
+		"link_app":            setting.LinkApp,
+		"withdraw_start_time": setting.WithdrawStartTime,
+		"withdraw_end_time":   setting.WithdrawEndTime,
+		"withdraw_days":       setting.WithdrawDays,
 	}
 	log.Printf("[Settings] Saving settings ID=%d, data=%+v", setting.ID, updateMap)
 
