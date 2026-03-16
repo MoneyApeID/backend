@@ -180,13 +180,12 @@ func generateExternalID() string {
 }
 
 func GeneratePartnerRefNo() string {
-	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	ts := time.Now().UnixMilli()
+	const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 	result := make([]byte, 32)
 	for i := 0; i < 32; i++ {
 		result[i] = charset[mathrand.Intn(len(charset))]
 	}
-	return fmt.Sprintf("%d%s", ts%10000, string(result))
+	return string(result)
 }
 
 type PakailinkAccessTokenResponse struct {
