@@ -91,3 +91,4 @@ tmp/
 
 # Local development files
 docker-compose.override.yml
+how-to-run.md
