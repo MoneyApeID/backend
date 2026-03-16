@@ -740,9 +740,9 @@ func PakailinkEwalletInquiry(ctx context.Context, client *http.Client, accessTok
 		ProductCode string `json:"productCode"`
 	}
 	type ewalletInquiryPayload struct {
-		PartnerReferenceNo string                        `json:"partnerReferenceNo"`
-		CustomerNumber     string                        `json:"customerNumber"`
-		AdditionalInfo     ewalletInquiryAdditionalInfo  `json:"additionalInfo"`
+		PartnerReferenceNo string                       `json:"partnerReferenceNo"`
+		CustomerNumber     string                       `json:"customerNumber"`
+		AdditionalInfo     ewalletInquiryAdditionalInfo `json:"additionalInfo"`
 	}
 	bodyObject := ewalletInquiryPayload{
 		PartnerReferenceNo: partnerRefNo,
