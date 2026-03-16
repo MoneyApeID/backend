@@ -17,12 +17,13 @@ import (
 	"fmt"
 	"io"
 	"log"
-	mathrand "math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 const (
@@ -175,17 +176,11 @@ func minifyJSON(body []byte) []byte {
 }
 
 func generateExternalID() string {
-	ts := time.Now().UnixMilli() % 10000000000
-	return fmt.Sprintf("%010d", ts)
+	return uuid.New().String()
 }
 
 func GeneratePartnerRefNo() string {
-	const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-	result := make([]byte, 32)
-	for i := 0; i < 32; i++ {
-		result[i] = charset[mathrand.Intn(len(charset))]
-	}
-	return string(result)
+	return uuid.New().String()
 }
 
 type PakailinkAccessTokenResponse struct {
