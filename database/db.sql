@@ -560,7 +560,7 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`id`, `name`, `number`, `password`, `reff_code`, `reff_by`, `balance`, `income`,  `level`, `total_invest`, `total_invest_vip`, `spin_ticket`, `status`, `investment_status`, `created_at`, `updated_at`) VALUES
-(1, 'Ciroos Users Management', '812345678', '$2y$10$fa5X/6ZfpaNZsa07TyzO3ukL/AtxtGLv.6erFIw9KmXFNYyFbE656', 'CIROOS', 0, 0.00, 0.00, 0, 0.00, 0.00, 100, 'Active', 'Active', '2025-01-01 00:00:00.000', '2025-01-01 00:00:00.000');
+(1, 'Money Users Management', '812345678', '$2y$10$fa5X/6ZfpaNZsa07TyzO3ukL/AtxtGLv.6erFIw9KmXFNYyFbE656', 'MONEY', 0, 0.00, 0.00, 0, 0.00, 0.00, 100, 'Active', 'Active', '2025-01-01 00:00:00.000', '2025-01-01 00:00:00.000');
 
 -- --------------------------------------------------------
 
