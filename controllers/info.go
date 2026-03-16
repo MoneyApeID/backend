@@ -13,7 +13,7 @@ func InfoPublicHandler(w http.ResponseWriter, r *http.Request) {
 
 	var setting models.Setting
 	if err := db.Model(&models.Setting{}).
-		Select("name, company, maintenance, closed_register").
+		Select("name, company, maintenance, closed_register, min_deposit").
 		Take(&setting).Error; err != nil {
 		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
 			Success: false,

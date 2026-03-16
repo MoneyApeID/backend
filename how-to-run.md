@@ -173,8 +173,8 @@ Di VPS:
 cd /var/www/moneyrich/frontend
 npm ci
 npm run build
-pm2 delete moneyrich-frontend || true
-pm2 start npm --name moneyrich-frontend -- start -- --hostname 127.0.0.1 --port 3000
+pm2 delete frontend || true
+pm2 start npm --name frontend -- start -- --hostname 127.0.0.1 --port 3000
 pm2 save
 pm2 startup systemd -u ubuntu --hp /home/ubuntu
 ```

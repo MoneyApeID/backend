@@ -71,6 +71,7 @@ func UpdateSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	// Get current settings
 	var setting models.Setting
 	if err := db.First(&setting).Error; err != nil {
+		log.Printf("[Settings] Failed to get current settings: %v", err)
 		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
 			Success: false,
 			Message: "Terjadi kesalahan sistem, silakan coba lagi",
@@ -213,10 +214,30 @@ func UpdateSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		setting.Popup = objectName
 	}
 
-	if err := db.Save(&setting).Error; err != nil {
+	// Use Updates with map to only update known columns, avoiding issues with missing DB columns
+	updateMap := map[string]interface{}{
+		"name":            setting.Name,
+		"company":         setting.Company,
+		"popup":           setting.Popup,
+		"popup_title":     setting.PopupTitle,
+		"min_deposit":     setting.MinDeposit,
+		"min_withdraw":    setting.MinWithdraw,
+		"max_withdraw":    setting.MaxWithdraw,
+		"withdraw_charge": setting.WithdrawCharge,
+		"auto_withdraw":   setting.AutoWithdraw,
+		"maintenance":     setting.Maintenance,
+		"closed_register": setting.ClosedRegister,
+		"link_cs":         setting.LinkCS,
+		"link_group":      setting.LinkGroup,
+		"link_app":        setting.LinkApp,
+	}
+	log.Printf("[Settings] Saving settings ID=%d, data=%+v", setting.ID, updateMap)
+
+	if err := db.Model(&models.Setting{}).Where("id = ?", setting.ID).Updates(updateMap).Error; err != nil {
+		log.Printf("[Settings] Failed to save settings: %v", err)
 		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
 			Success: false,
-			Message: "Terjadi kesalahan sistem, silakan coba lagi",
+			Message: "Terjadi kesalahan sistem: " + err.Error(),
 		})
 		return
 	}

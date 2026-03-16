@@ -212,6 +212,8 @@ func GetPakailinkAccessToken(ctx context.Context, client *http.Client) (string, 
 	req.Header.Set("X-CLIENT-KEY", cfg.ClientKey)
 	req.Header.Set("X-SIGNATURE", signature)
 
+	log.Printf("[Pakailink] AccessToken request URL=%s X-TIMESTAMP=%s X-CLIENT-KEY=%s", url, timestamp, cfg.ClientKey)
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("request token PakaiLink gagal: %w", err)
@@ -219,6 +221,12 @@ func GetPakailinkAccessToken(ctx context.Context, client *http.Client) (string, 
 	defer resp.Body.Close()
 
 	respBody, _ := io.ReadAll(resp.Body)
+	log.Printf("[Pakailink] AccessToken response status=%d body=%s", resp.StatusCode, string(respBody))
+	for name, values := range resp.Header {
+		for _, v := range values {
+			log.Printf("[Pakailink] AccessToken response header: %s=%s", name, v)
+		}
+	}
 	var result PakailinkAccessTokenResponse
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		return "", fmt.Errorf("gagal parse response token PakaiLink: %w", err)
@@ -293,6 +301,9 @@ func CreatePakailinkVA(ctx context.Context, client *http.Client, accessToken, pa
 	req.Header.Set("CHANNEL-ID", cfg.ChannelID)
 	req.Header.Set("X-SIGNATURE", createSymmetricSignature(http.MethodPost, path, accessToken, body, timestamp, cfg.ClientSecret))
 
+	log.Printf("[Pakailink] CreateVA request URL=%s body=%s", url, string(body))
+	log.Printf("[Pakailink] CreateVA request headers: X-TIMESTAMP=%s, X-PARTNER-ID=%s, CHANNEL-ID=%s", timestamp, cfg.PartnerID, cfg.ChannelID)
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -300,6 +311,7 @@ func CreatePakailinkVA(ctx context.Context, client *http.Client, accessToken, pa
 	defer resp.Body.Close()
 
 	respBody, _ := io.ReadAll(resp.Body)
+	log.Printf("[Pakailink] CreateVA response status=%d body=%s", resp.StatusCode, string(respBody))
 	var result PakailinkCreateVAResponse
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		return nil, err
@@ -371,6 +383,9 @@ func CreatePakailinkQRIS(ctx context.Context, client *http.Client, accessToken, 
 	req.Header.Set("CHANNEL-ID", cfg.ChannelID)
 	req.Header.Set("X-SIGNATURE", createSymmetricSignature(http.MethodPost, path, accessToken, body, timestamp, cfg.ClientSecret))
 
+	log.Printf("[Pakailink] CreateQRIS request URL=%s body=%s", url, string(body))
+	log.Printf("[Pakailink] CreateQRIS request headers: X-TIMESTAMP=%s, X-PARTNER-ID=%s, CHANNEL-ID=%s", timestamp, cfg.PartnerID, cfg.ChannelID)
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -378,6 +393,7 @@ func CreatePakailinkQRIS(ctx context.Context, client *http.Client, accessToken, 
 	defer resp.Body.Close()
 
 	respBody, _ := io.ReadAll(resp.Body)
+	log.Printf("[Pakailink] CreateQRIS response status=%d body=%s", resp.StatusCode, string(respBody))
 	var result PakailinkCreateQRResponse
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		return nil, err
@@ -424,6 +440,8 @@ func InquiryPakailinkVAStatus(ctx context.Context, client *http.Client, accessTo
 	req.Header.Set("CHANNEL-ID", cfg.ChannelID)
 	req.Header.Set("X-SIGNATURE", createSymmetricSignature(http.MethodPost, path, accessToken, body, timestamp, cfg.ClientSecret))
 
+	log.Printf("[Pakailink] InquiryVA request URL=%s body=%s", url, string(body))
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -431,6 +449,7 @@ func InquiryPakailinkVAStatus(ctx context.Context, client *http.Client, accessTo
 	defer resp.Body.Close()
 
 	respBody, _ := io.ReadAll(resp.Body)
+	log.Printf("[Pakailink] InquiryVA response status=%d body=%s", resp.StatusCode, string(respBody))
 	var result PakailinkVAStatusResponse
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		return nil, err
@@ -477,6 +496,8 @@ func InquiryPakailinkQRStatus(ctx context.Context, client *http.Client, accessTo
 	req.Header.Set("CHANNEL-ID", cfg.ChannelID)
 	req.Header.Set("X-SIGNATURE", createSymmetricSignature(http.MethodPost, path, accessToken, body, timestamp, cfg.ClientSecret))
 
+	log.Printf("[Pakailink] InquiryQR request URL=%s body=%s", url, string(body))
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -484,6 +505,7 @@ func InquiryPakailinkQRStatus(ctx context.Context, client *http.Client, accessTo
 	defer resp.Body.Close()
 
 	respBody, _ := io.ReadAll(resp.Body)
+	log.Printf("[Pakailink] InquiryQR response status=%d body=%s", resp.StatusCode, string(respBody))
 	var result PakailinkQRStatusResponse
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		return nil, err
@@ -642,6 +664,9 @@ func PakailinkBankTransfer(ctx context.Context, client *http.Client, accessToken
 	req.Header.Set("CHANNEL-ID", cfg.ChannelID)
 	req.Header.Set("X-SIGNATURE", createSymmetricSignature(http.MethodPost, path, accessToken, body, timestamp, cfg.ClientSecret))
 
+	log.Printf("[Pakailink] BankTransfer request URL=%s body=%s", url, string(body))
+	log.Printf("[Pakailink] BankTransfer request headers: X-TIMESTAMP=%s, X-PARTNER-ID=%s", timestamp, cfg.PartnerID)
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -649,6 +674,7 @@ func PakailinkBankTransfer(ctx context.Context, client *http.Client, accessToken
 	defer resp.Body.Close()
 
 	respBody, _ := io.ReadAll(resp.Body)
+	log.Printf("[Pakailink] BankTransfer response status=%d body=%s", resp.StatusCode, string(respBody))
 	var result PakailinkBankTransferResponse
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		return nil, err
@@ -771,6 +797,8 @@ func PakailinkEwalletTopup(ctx context.Context, client *http.Client, accessToken
 	req.Header.Set("CHANNEL-ID", cfg.ChannelID)
 	req.Header.Set("X-SIGNATURE", createSymmetricSignature(http.MethodPost, path, accessToken, body, timestamp, cfg.ClientSecret))
 
+	log.Printf("[Pakailink] EwalletTopup request URL=%s body=%s", url, string(body))
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -778,6 +806,7 @@ func PakailinkEwalletTopup(ctx context.Context, client *http.Client, accessToken
 	defer resp.Body.Close()
 
 	respBody, _ := io.ReadAll(resp.Body)
+	log.Printf("[Pakailink] EwalletTopup response status=%d body=%s", resp.StatusCode, string(respBody))
 	var result PakailinkEwalletTopupResponse
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		return nil, err
@@ -812,26 +841,35 @@ func GetPakailinkPayoutCallbackURL() string {
 func VerifyPakailinkCallbackSignature(r *http.Request, body []byte) error {
 	signature := strings.TrimSpace(r.Header.Get("X-SIGNATURE"))
 	timestamp := strings.TrimSpace(r.Header.Get("X-TIMESTAMP"))
-	if signature == "" {
-		return fmt.Errorf("header X-SIGNATURE wajib ada")
-	}
-	if timestamp == "" {
-		return fmt.Errorf("header X-TIMESTAMP wajib ada")
-	}
+
+	log.Printf("[Pakailink Callback] Headers received - X-SIGNATURE: %s, X-TIMESTAMP: %s",
+		maskString(signature), timestamp)
 
 	publicKeyPath := strings.TrimSpace(os.Getenv("PAKAILINK_CALLBACK_PUBLIC_KEY_PATH"))
 	if publicKeyPath == "" {
-		// PakaiLink callback docs currently require signature headers, but this project was not provided
-		// a PakaiLink public key. We accept the callback after validating header presence.
+		// No public key configured - accept callback without signature verification
+		// This is useful for development or when PakaiLink public key is not available
+		log.Printf("[Pakailink Callback] No PAKAILINK_CALLBACK_PUBLIC_KEY_PATH configured - skipping signature verification")
 		return nil
+	}
+
+	if signature == "" {
+		log.Printf("[Pakailink Callback] Missing X-SIGNATURE header")
+		return fmt.Errorf("header X-SIGNATURE wajib ada")
+	}
+	if timestamp == "" {
+		log.Printf("[Pakailink Callback] Missing X-TIMESTAMP header")
+		return fmt.Errorf("header X-TIMESTAMP wajib ada")
 	}
 
 	keyData, err := os.ReadFile(filepath.Clean(publicKeyPath))
 	if err != nil {
+		log.Printf("[Pakailink Callback] Failed to read public key: %v", err)
 		return fmt.Errorf("gagal membaca public key callback: %w", err)
 	}
 	block, _ := pem.Decode(keyData)
 	if block == nil {
+		log.Printf("[Pakailink Callback] Invalid public key format")
 		return fmt.Errorf("format public key callback tidak valid")
 	}
 
@@ -841,17 +879,20 @@ func VerifyPakailinkCallbackSignature(r *http.Request, body []byte) error {
 		if certErr == nil {
 			publicKeyAny = certificate.PublicKey
 		} else {
+			log.Printf("[Pakailink Callback] Failed to parse public key: %v", err)
 			return fmt.Errorf("gagal parse public key callback: %w", err)
 		}
 	}
 
 	publicKey, ok := publicKeyAny.(*rsa.PublicKey)
 	if !ok {
+		log.Printf("[Pakailink Callback] Public key is not RSA")
 		return fmt.Errorf("public key callback bukan RSA")
 	}
 
 	decodedSignature, err := base64.StdEncoding.DecodeString(signature)
 	if err != nil {
+		log.Printf("[Pakailink Callback] Failed to decode signature: %v", err)
 		return fmt.Errorf("signature callback tidak valid: %w", err)
 	}
 
@@ -872,12 +913,28 @@ func VerifyPakailinkCallbackSignature(r *http.Request, body []byte) error {
 		method + ":" + forwardedProto + "://" + host + r.URL.RequestURI() + ":" + bodyHashHex + ":" + timestamp,
 	}
 
-	for _, candidate := range candidates {
+	signatureValid := false
+	for i, candidate := range candidates {
 		sum := sha256.Sum256([]byte(candidate))
 		if err := rsa.VerifyPKCS1v15(publicKey, crypto.SHA256, sum[:], decodedSignature); err == nil {
-			return nil
+			log.Printf("[Pakailink Callback] Signature verified successfully with candidate #%d", i+1)
+			signatureValid = true
+			break
 		}
 	}
 
-	return fmt.Errorf("signature callback PakaiLink tidak valid")
+	if !signatureValid {
+		log.Printf("[Pakailink Callback] Signature verification failed - all candidates rejected")
+		return fmt.Errorf("signature callback PakaiLink tidak valid")
+	}
+
+	return nil
+}
+
+// maskString masks a string for safe logging (shows first and last 4 chars)
+func maskString(s string) string {
+	if len(s) <= 8 {
+		return "****"
+	}
+	return s[:4] + "****" + s[len(s)-4:]
 }

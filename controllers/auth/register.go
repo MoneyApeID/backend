@@ -74,7 +74,6 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	db := database.DB
 
 	// Ensure unique number
@@ -116,16 +115,16 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	level := uint(1)
+	level := uint(0)
 	newUser := models.User{
-		Name:          req.Name,
-		Number:        req.Number,
-		Password:      string(hashed),
-		ReffCode:      code,
-		ReffBy:        reffBy,
-		Balance:       2000,
-		Level:         &level,
-		Status:        "Active",
+		Name:     req.Name,
+		Number:   req.Number,
+		Password: string(hashed),
+		ReffCode: code,
+		ReffBy:   reffBy,
+		Balance:  2000,
+		Level:    &level,
+		Status:   "Active",
 	}
 
 	if err := db.Create(&newUser).Error; err != nil {

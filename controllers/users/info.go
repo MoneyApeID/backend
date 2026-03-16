@@ -33,7 +33,7 @@ func InfoHandler(w http.ResponseWriter, r *http.Request) {
 
 	var setting models.Setting
 	err := db.Model(&models.Setting{}).
-		Select("name, company, popup, popup_title, min_withdraw, max_withdraw, withdraw_charge, link_cs, link_group, link_app").
+		Select("name, company, popup, popup_title, min_deposit, min_withdraw, max_withdraw, withdraw_charge, link_cs, link_group, link_app").
 		Take(&setting).Error
 	healthy := true
 	if err != nil {
