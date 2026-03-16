@@ -603,6 +603,11 @@ func PakailinkBankInquiry(ctx context.Context, client *http.Client, accessToken,
 	req.Header.Set("CHANNEL-ID", cfg.ChannelID)
 	req.Header.Set("X-SIGNATURE", createSymmetricSignature(http.MethodPost, path, accessToken, body, timestamp, cfg.ClientSecret))
 
+	log.Printf("[Pakailink] BankInquiry request URL=%s", url)
+	for k, v := range req.Header {
+		log.Printf("[Pakailink] BankInquiry request header: %s=%s", k, v)
+	}
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
