@@ -257,22 +257,30 @@ func UpdateSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Re-read from DB to ensure we return what was actually saved
+	if err := db.First(&setting).Error; err == nil {
+		// use freshly-read value
+	}
+
 	// Transform to response format
 	response := map[string]interface{}{
-		"name":            setting.Name,
-		"company":         setting.Company,
-		"popup":           setting.Popup,
-		"popup_title":     setting.PopupTitle,
-		"min_deposit":     setting.MinDeposit,
-		"min_withdraw":    setting.MinWithdraw,
-		"max_withdraw":    setting.MaxWithdraw,
-		"withdraw_charge": setting.WithdrawCharge,
-		"auto_withdraw":   setting.AutoWithdraw,
-		"maintenance":     setting.Maintenance,
-		"closed_register": setting.ClosedRegister,
-		"link_cs":         setting.LinkCS,
-		"link_group":      setting.LinkGroup,
-		"link_app":        setting.LinkApp,
+		"name":                setting.Name,
+		"company":             setting.Company,
+		"popup":               setting.Popup,
+		"popup_title":         setting.PopupTitle,
+		"min_deposit":         setting.MinDeposit,
+		"min_withdraw":        setting.MinWithdraw,
+		"max_withdraw":        setting.MaxWithdraw,
+		"withdraw_charge":     setting.WithdrawCharge,
+		"auto_withdraw":       setting.AutoWithdraw,
+		"maintenance":         setting.Maintenance,
+		"closed_register":     setting.ClosedRegister,
+		"link_cs":             setting.LinkCS,
+		"link_group":          setting.LinkGroup,
+		"link_app":            setting.LinkApp,
+		"withdraw_start_time": setting.WithdrawStartTime,
+		"withdraw_end_time":   setting.WithdrawEndTime,
+		"withdraw_days":       setting.WithdrawDays,
 	}
 
 	utils.WriteJSON(w, http.StatusOK, utils.APIResponse{
