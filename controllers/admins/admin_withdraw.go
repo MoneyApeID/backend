@@ -2,9 +2,7 @@ package admins
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
-	"math/rand"
 	"net/http"
 	"strconv"
 	"strings"
@@ -53,10 +51,7 @@ func AdminWithdrawInquiryHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	partnerRefNo := fmt.Sprintf("%d%04d", time.Now().UnixMilli(), rand.Intn(10000))
-	for len(partnerRefNo) < 36 {
-		partnerRefNo += fmt.Sprintf("%d", rand.Intn(10))
-	}
+	partnerRefNo := utils.GeneratePartnerRefNo()
 
 	adminFee := 2000.0
 	finalAmount := req.Amount + adminFee

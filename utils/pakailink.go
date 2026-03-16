@@ -175,9 +175,18 @@ func minifyJSON(body []byte) []byte {
 }
 
 func generateExternalID() string {
-	ts := time.Now().UnixMilli() % 100000000000
-	randSuffix := mathrand.Intn(10000)
-	return fmt.Sprintf("%011d%04d", ts, randSuffix)
+	ts := time.Now().UnixMilli() % 10000000000
+	return fmt.Sprintf("%010d", ts)
+}
+
+func GeneratePartnerRefNo() string {
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	ts := time.Now().UnixMilli()
+	result := make([]byte, 32)
+	for i := 0; i < 32; i++ {
+		result[i] = charset[mathrand.Intn(len(charset))]
+	}
+	return fmt.Sprintf("%d%s", ts%10000, string(result))
 }
 
 type PakailinkAccessTokenResponse struct {
