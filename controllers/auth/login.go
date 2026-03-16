@@ -86,7 +86,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	// Ambil data settings
 	var setting models.Setting
 	err = db.Model(&models.Setting{}).
-		Select("name, company, popup, popup_title, min_withdraw, max_withdraw, withdraw_charge, link_cs, link_group, link_app").
+		Select("name, company, popup, popup_title, min_deposit, min_withdraw, max_withdraw, withdraw_charge, link_cs, link_group, link_app").
 		Take(&setting).Error
 	healthy := true
 	if err != nil {
@@ -118,6 +118,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 				"company":         setting.Company,
 				"popup":           setting.Popup,
 				"popup_title":     setting.PopupTitle,
+				"min_deposit":     int64(setting.MinDeposit),
 				"min_withdraw":    int64(setting.MinWithdraw),
 				"max_withdraw":    int64(setting.MaxWithdraw),
 				"withdraw_charge": int64(setting.WithdrawCharge),
