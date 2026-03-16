@@ -735,13 +735,22 @@ func PakailinkEwalletInquiry(ctx context.Context, client *http.Client, accessTok
 
 	path := "/snap/v1.0/emoney/account-inquiry"
 	url := cfg.BaseURL + path
-	bodyObject := map[string]interface{}{
-		"partnerReferenceNo": partnerRefNo,
-		"customerNumber":     customerNumber,
-		"additionalInfo":     map[string]string{"productCode": productCode},
+
+	type ewalletInquiryAdditionalInfo struct {
+		ProductCode string `json:"productCode"`
+	}
+	type ewalletInquiryPayload struct {
+		PartnerReferenceNo string                        `json:"partnerReferenceNo"`
+		CustomerNumber     string                        `json:"customerNumber"`
+		AdditionalInfo     ewalletInquiryAdditionalInfo  `json:"additionalInfo"`
+	}
+	bodyObject := ewalletInquiryPayload{
+		PartnerReferenceNo: partnerRefNo,
+		CustomerNumber:     customerNumber,
+		AdditionalInfo:     ewalletInquiryAdditionalInfo{ProductCode: productCode},
 	}
 	body, _ := json.Marshal(bodyObject)
-	body = minifyJSON(body)
+	// Do not use minifyJSON as it sorts map keys alphabetically which breaks strict gateway parsers
 	timestamp := PakailinkTimestamp()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
