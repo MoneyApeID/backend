@@ -54,6 +54,11 @@ func AdminWithdrawInquiryHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	partnerRefNo := fmt.Sprintf("%d%04d", time.Now().UnixMilli(), rand.Intn(10000))
+	// Pad with random characters to ensure it's around 32 chars to match the provider sample
+	for len(partnerRefNo) < 32 {
+		partnerRefNo += fmt.Sprintf("%x", rand.Intn(16))
+	}
+
 	adminFee := 2000.0
 	finalAmount := req.Amount + adminFee
 	isEwallet := bank.Type == "ewallet"
@@ -81,7 +86,7 @@ func AdminWithdrawInquiryHandler(w http.ResponseWriter, r *http.Request) {
 		respData["account_name"] = inquiryResp.CustomerName
 	} else {
 		// Bank inquiry
-		inquiryResp, err := utils.PakailinkBankInquiry(r.Context(), client, accessToken, partnerRefNo, req.AccountNumber, req.BankCode)
+		inquiryResp, err := utils.PakailinkBankInquiry(r.Context(), client, accessToken, partnerRefNo, req.AccountNumber, req.BankCode, req.Amount)
 		if err != nil {
 			log.Printf("[AdminWithdraw] BankInquiry error: %v", err)
 			utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "Inquiry bank gagal: " + err.Error()})
