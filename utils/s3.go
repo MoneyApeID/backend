@@ -18,13 +18,13 @@ import (
 
 // getS3Config returns AWS config for S3
 func getS3Config() (aws.Config, error) {
-	region := os.Getenv("S3_REGION")
+	region := strings.TrimSpace(os.Getenv("S3_REGION"))
 	if region == "" {
 		region = "ap-southeast-1" // default Singapore
 	}
 
-	accessKey := os.Getenv("S3_ACCESS_KEY")
-	secretKey := os.Getenv("S3_SECRET_KEY")
+	accessKey := strings.TrimSpace(os.Getenv("S3_ACCESS_KEY"))
+	secretKey := strings.TrimSpace(os.Getenv("S3_SECRET_KEY"))
 
 	if accessKey == "" || secretKey == "" {
 		return aws.Config{}, fmt.Errorf("S3_ACCESS_KEY or S3_SECRET_KEY missing")
@@ -43,9 +43,27 @@ func getS3Config() (aws.Config, error) {
 	return cfg, nil
 }
 
+// newS3Client creates a new S3 client with optional custom endpoint and path style
+func newS3Client(cfg aws.Config) *s3.Client {
+	return s3.NewFromConfig(cfg, func(o *s3.Options) {
+		endpoint := strings.TrimSpace(os.Getenv("S3_ENDPOINT"))
+		if endpoint != "" {
+			if !strings.HasPrefix(endpoint, "http") {
+				endpoint = "https://" + endpoint
+			}
+			o.BaseEndpoint = aws.String(endpoint)
+		}
+		// Some S3-compatible providers require path style addressing
+		// For AWS S3 301 errors, sometimes forcing path style helps if DNS propagation is slow
+		if strings.TrimSpace(os.Getenv("S3_USE_PATH_STYLE")) == "true" {
+			o.UsePathStyle = true
+		}
+	})
+}
+
 // UploadToS3 uploads a file to AWS S3
 func UploadToS3(objectName string, file io.Reader, fileSize int64) error {
-	bucket := os.Getenv("S3_BUCKET")
+	bucket := strings.TrimSpace(os.Getenv("S3_BUCKET"))
 	if bucket == "" {
 		return fmt.Errorf("S3_BUCKET not set in environment")
 	}
@@ -55,7 +73,7 @@ func UploadToS3(objectName string, file io.Reader, fileSize int64) error {
 		return err
 	}
 
-	client := s3.NewFromConfig(cfg)
+	client := newS3Client(cfg)
 
 	contentType := mime.TypeByExtension(path.Ext(objectName))
 	if contentType == "" {
@@ -77,7 +95,7 @@ func UploadToS3(objectName string, file io.Reader, fileSize int64) error {
 
 // GenerateSignedURL returns a presigned GET URL for the given object
 func GenerateSignedURL(objectName string, expirySeconds int64) (string, error) {
-	bucket := os.Getenv("S3_BUCKET")
+	bucket := strings.TrimSpace(os.Getenv("S3_BUCKET"))
 	if bucket == "" {
 		return "", fmt.Errorf("S3_BUCKET not set in environment")
 	}
@@ -87,7 +105,7 @@ func GenerateSignedURL(objectName string, expirySeconds int64) (string, error) {
 		return "", err
 	}
 
-	client := s3.NewFromConfig(cfg)
+	client := newS3Client(cfg)
 	presigner := s3.NewPresignClient(client)
 
 	presigned, err := presigner.PresignGetObject(context.TODO(),
@@ -124,7 +142,7 @@ func UploadToS3AndPresign(objectName string, file io.ReadSeeker, fileSize int64,
 
 // UploadToS3Server uploads a file to S3_BUCKET_SERVER and returns the full URL
 func UploadToS3Server(objectName string, file io.Reader, fileSize int64) (string, error) {
-	bucket := os.Getenv("S3_BUCKET_SERVER")
+	bucket := strings.TrimSpace(os.Getenv("S3_BUCKET_SERVER"))
 	if bucket == "" {
 		return "", fmt.Errorf("S3_BUCKET_SERVER not set in environment")
 	}
@@ -134,7 +152,7 @@ func UploadToS3Server(objectName string, file io.Reader, fileSize int64) (string
 		return "", err
 	}
 
-	client := s3.NewFromConfig(cfg)
+	client := newS3Client(cfg)
 
 	contentType := mime.TypeByExtension(path.Ext(objectName))
 	if contentType == "" {
@@ -152,13 +170,13 @@ func UploadToS3Server(objectName string, file io.Reader, fileSize int64) (string
 	}
 
 	// Construct public URL (assuming S3_BUCKET_SERVER is public or has CloudFront)
-	s3Region := os.Getenv("S3_REGION")
+	s3Region := strings.TrimSpace(os.Getenv("S3_REGION"))
 	if s3Region == "" {
 		s3Region = "ap-southeast-1"
 	}
 	// Format: https://bucket-name.s3.region.amazonaws.com/key
 	// Or if using custom domain, use S3_BASE_URL if available
-	baseURL := os.Getenv("S3_BASE_URL")
+	baseURL := strings.TrimSpace(os.Getenv("S3_BASE_URL"))
 	if baseURL != "" {
 		return fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), objectName), nil
 	}
@@ -167,7 +185,7 @@ func UploadToS3Server(objectName string, file io.Reader, fileSize int64) (string
 
 // DeleteFromS3 deletes a file from S3_BUCKET_SERVER
 func DeleteFromS3Server(objectName string) error {
-	bucket := os.Getenv("S3_BUCKET_SERVER")
+	bucket := strings.TrimSpace(os.Getenv("S3_BUCKET_SERVER"))
 	if bucket == "" {
 		return fmt.Errorf("S3_BUCKET_SERVER not set in environment")
 	}
@@ -177,7 +195,7 @@ func DeleteFromS3Server(objectName string) error {
 		return err
 	}
 
-	client := s3.NewFromConfig(cfg)
+	client := newS3Client(cfg)
 
 	_, err = client.DeleteObject(context.TODO(), &s3.DeleteObjectInput{
 		Bucket: aws.String(bucket),
