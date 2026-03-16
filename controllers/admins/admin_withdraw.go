@@ -53,7 +53,7 @@ func AdminWithdrawInquiryHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	partnerRefNo := fmt.Sprintf("ADM%d%04d", time.Now().UnixMilli(), rand.Intn(10000))
+	partnerRefNo := fmt.Sprintf("%d%04d", time.Now().UnixMilli(), rand.Intn(10000))
 	adminFee := 2000.0
 	finalAmount := req.Amount + adminFee
 	isEwallet := bank.Type == "ewallet"
