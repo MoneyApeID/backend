@@ -17,10 +17,10 @@ import (
 	"fmt"
 	"io"
 	"log"
+	mathrand "math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -175,7 +175,9 @@ func minifyJSON(body []byte) []byte {
 }
 
 func generateExternalID() string {
-	return strconv.FormatInt(time.Now().UnixNano()%10000000000, 10)
+	ts := time.Now().UnixMilli() % 100000000000
+	randSuffix := mathrand.Intn(10000)
+	return fmt.Sprintf("%011d%04d", ts, randSuffix)
 }
 
 type PakailinkAccessTokenResponse struct {

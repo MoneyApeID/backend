@@ -54,9 +54,8 @@ func AdminWithdrawInquiryHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	partnerRefNo := fmt.Sprintf("%d%04d", time.Now().UnixMilli(), rand.Intn(10000))
-	// Pad with random characters to ensure it's around 32 chars to match the provider sample
-	for len(partnerRefNo) < 32 {
-		partnerRefNo += fmt.Sprintf("%x", rand.Intn(16))
+	for len(partnerRefNo) < 36 {
+		partnerRefNo += fmt.Sprintf("%d", rand.Intn(10))
 	}
 
 	adminFee := 2000.0
