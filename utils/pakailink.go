@@ -113,8 +113,7 @@ func IsPakailinkEwalletCode(code string) bool {
 }
 
 func PakailinkTimestamp() string {
-	loc, _ := time.LoadLocation("Asia/Jakarta")
-	return time.Now().In(loc).Format("2006-01-02T15:04:05-07:00")
+	return time.Now().UTC().Format("2006-01-02T15:04:05Z")
 }
 
 func createAsymmetricSignature(stringToSign, privateKeyPath string) (string, error) {
