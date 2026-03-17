@@ -244,16 +244,6 @@ func ApproveWithdrawal(w http.ResponseWriter, r *http.Request) {
 	status := "Pending"
 
 	if destination.IsEwallet {
-		_, err := utils.PakailinkEwalletInquiry(r.Context(), client, accessToken, withdrawal.OrderID, destination.AccountNumber, destination.PayoutCode)
-		if err != nil {
-			log.Printf("[Pakailink] Ewallet inquiry error for %s: %v", withdrawal.OrderID, err)
-			utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{
-				Success: false,
-				Message: "Inquiry e-wallet gagal. Status penarikan tetap Pending untuk dicoba kembali.",
-			})
-			return
-		}
-
 		topupResp, err := utils.PakailinkEwalletTopup(r.Context(), client, accessToken, withdrawal.OrderID, destination.AccountNumber, destination.PayoutCode, withdrawal.FinalAmount, callbackURL)
 		if err != nil {
 			log.Printf("[Pakailink] Ewallet topup error for %s: %v", withdrawal.OrderID, err)
@@ -268,16 +258,6 @@ func ApproveWithdrawal(w http.ResponseWriter, r *http.Request) {
 			status = "Success"
 		}
 	} else {
-		_, err := utils.PakailinkBankInquiry(r.Context(), client, accessToken, withdrawal.OrderID, destination.AccountNumber, destination.PayoutCode)
-		if err != nil {
-			log.Printf("[Pakailink] Bank inquiry error for %s: %v", withdrawal.OrderID, err)
-			utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{
-				Success: false,
-				Message: "Inquiry bank gagal. Status penarikan tetap Pending untuk dicoba kembali.",
-			})
-			return
-		}
-
 		transferResp, err := utils.PakailinkBankTransfer(r.Context(), client, accessToken, withdrawal.OrderID, destination.AccountNumber, destination.PayoutCode, withdrawal.FinalAmount, callbackURL)
 		if err != nil {
 			log.Printf("[Pakailink] Bank transfer error for %s: %v", withdrawal.OrderID, err)
