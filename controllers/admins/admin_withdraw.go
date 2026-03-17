@@ -43,14 +43,6 @@ func AdminWithdrawInquiryHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
-	accessToken, err := utils.GetPakailinkAccessToken(r.Context(), client)
-	if err != nil {
-		log.Printf("[AdminWithdraw] GetAccessToken error: %v", err)
-		utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{Success: false, Message: "Gagal menghubungi payment gateway"})
-		return
-	}
-
 	partnerRefNo := utils.GeneratePartnerRefNo()
 
 	adminFee := 2000.0
@@ -68,26 +60,25 @@ func AdminWithdrawInquiryHandler(w http.ResponseWriter, r *http.Request) {
 		"partner_ref_no": partnerRefNo,
 	}
 
+	// Use LinkQu for inquiry (more reliable)
 	if isEwallet {
-		// Ewallet inquiry
-		inquiryResp, err := utils.PakailinkEwalletInquiry(r.Context(), client, accessToken, partnerRefNo, req.AccountNumber, req.BankCode)
+		// Ewallet inquiry via LinkQu
+		inquiryResp, err := utils.LinkQuInquiryEwallet(req.BankCode, req.AccountNumber, req.Amount, partnerRefNo)
 		if err != nil {
-			log.Printf("[AdminWithdraw] EwalletInquiry error: %v", err)
+			log.Printf("[AdminWithdraw] LinkQu EwalletInquiry error: %v", err)
 			utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "Inquiry ewallet gagal: " + err.Error()})
 			return
 		}
-		respData["session_id"] = inquiryResp.SessionID
-		respData["account_name"] = inquiryResp.CustomerName
+		respData["account_name"] = inquiryResp.AccountName
 	} else {
-		// Bank inquiry
-		inquiryResp, err := utils.PakailinkBankInquiry(r.Context(), client, accessToken, partnerRefNo, req.AccountNumber, req.BankCode)
+		// Bank inquiry via LinkQu
+		inquiryResp, err := utils.LinkQuInquiryBank(req.BankCode, req.AccountNumber, req.Amount, partnerRefNo)
 		if err != nil {
-			log.Printf("[AdminWithdraw] BankInquiry error: %v", err)
+			log.Printf("[AdminWithdraw] LinkQu BankInquiry error: %v", err)
 			utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{Success: false, Message: "Inquiry bank gagal: " + err.Error()})
 			return
 		}
-		respData["session_id"] = inquiryResp.SessionID
-		respData["account_name"] = inquiryResp.BeneficiaryAccountName
+		respData["account_name"] = inquiryResp.AccountName
 	}
 
 	utils.WriteJSON(w, http.StatusOK, utils.APIResponse{
@@ -98,7 +89,7 @@ func AdminWithdrawInquiryHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 type adminWithdrawTransferRequest struct {
-	SessionID     string  `json:"session_id"`
+	SessionID     string  `json:"session_id"` // optional, not needed for PakaiLink
 	BankCode      string  `json:"bank_code"`
 	AccountNumber string  `json:"account_number"`
 	AccountName   string  `json:"account_name"`
@@ -122,7 +113,6 @@ func AdminWithdrawTransferHandler(w http.ResponseWriter, r *http.Request) {
 
 	req.BankCode = strings.TrimSpace(req.BankCode)
 	req.AccountNumber = strings.TrimSpace(req.AccountNumber)
-	req.SessionID = strings.TrimSpace(req.SessionID)
 	req.PartnerRefNo = strings.TrimSpace(req.PartnerRefNo)
 
 	if req.BankCode == "" || req.AccountNumber == "" || req.Amount <= 0 || req.PartnerRefNo == "" {
@@ -161,7 +151,7 @@ func AdminWithdrawTransferHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Execute transfer
+	// Execute transfer via PakaiLink (sessionId is optional)
 	client := &http.Client{Timeout: 30 * time.Second}
 	accessToken, err := utils.GetPakailinkAccessToken(r.Context(), client)
 	if err != nil {
@@ -174,7 +164,8 @@ func AdminWithdrawTransferHandler(w http.ResponseWriter, r *http.Request) {
 	var transferStatus string
 
 	if isEwallet {
-		topupResp, err := utils.PakailinkEwalletTopup(r.Context(), client, accessToken, req.PartnerRefNo, req.AccountNumber, req.BankCode, req.SessionID, req.Amount, "")
+		// Ewallet topup via PakaiLink (sessionId is optional)
+		topupResp, err := utils.PakailinkEwalletTopup(r.Context(), client, accessToken, req.PartnerRefNo, req.AccountNumber, req.BankCode, "", req.Amount, "")
 		if err != nil {
 			log.Printf("[AdminWithdraw] EwalletTopup error: %v", err)
 			db.Model(&record).Update("status", "Failed")
@@ -186,7 +177,8 @@ func AdminWithdrawTransferHandler(w http.ResponseWriter, r *http.Request) {
 			transferStatus = "Pending"
 		}
 	} else {
-		transferResp, err := utils.PakailinkBankTransfer(r.Context(), client, accessToken, req.PartnerRefNo, req.AccountNumber, req.BankCode, req.SessionID, req.Amount, "")
+		// Bank transfer via PakaiLink (sessionId is optional)
+		transferResp, err := utils.PakailinkBankTransfer(r.Context(), client, accessToken, req.PartnerRefNo, req.AccountNumber, req.BankCode, "", req.Amount, "")
 		if err != nil {
 			log.Printf("[AdminWithdraw] BankTransfer error: %v", err)
 			db.Model(&record).Update("status", "Failed")

@@ -21,6 +21,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 var baseURL = "https://api.pakailink.id"
@@ -42,9 +44,6 @@ func main() {
 	}
 
 	signature := createAsymmetricSignature(stringToSign, privKeyData)
-	fmt.Printf("Timestamp: %s\n", timestamp)
-	fmt.Printf("Signature: %s\n", signature)
-
 	body := []byte(`{"grantType":"client_credentials"}`)
 	req, _ := http.NewRequest("POST", baseURL+"/snap/v1.0/access-token/b2b", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -76,42 +75,166 @@ func main() {
 	accessToken := tokenResp.AccessToken
 	fmt.Printf("Access Token: %s...\n\n", accessToken[:50])
 
-	tests := []struct {
-		name          string
-		partnerRefNo  string
-		externalID    string
-		accountNumber string
-		bankCode      string
+	// Test Bank Inquiry with various scenarios
+	bankTests := []struct {
+		name       string
+		bodyFunc   func(externalID string) ([]byte, string)
+		externalID string
 	}{
-		{"Test1: Alpha refNo + Numeric extID", randomAlpha(28) + "1234", fmt.Sprintf("%d", time.Now().UnixMilli()), "53602400026652", "116"},
-		{"Test2: All numeric", fmt.Sprintf("%d", time.Now().UnixMilli()), fmt.Sprintf("%d", time.Now().UnixMilli()+1), "53602400026652", "116"},
-		{"Test3: Doc example BCA", "ilFpX51e0CAttU2DW7dDWV7TCWqk1cE1wyJj", fmt.Sprintf("%d", time.Now().UnixMilli()), "6750620416", "014"},
-		{"Test4: Alpha 32", randomAlpha(32), fmt.Sprintf("%d", time.Now().UnixMilli()), "53602400026652", "116"},
+		{"Test1: UUID v4 for both", func(extID string) ([]byte, string) {
+			refNo := uuid.New().String()
+			body := map[string]interface{}{
+				"partnerReferenceNo":       refNo,
+				"beneficiaryAccountNumber": "53602400026652",
+				"additionalInfo":           map[string]string{"beneficiaryBankCode": "116"},
+			}
+			b, _ := json.Marshal(body)
+			return b, refNo
+		}, uuid.New().String()},
+		{"Test2: UUID without dashes", func(extID string) ([]byte, string) {
+			refNo := strings.ReplaceAll(uuid.New().String(), "-", "")
+			body := map[string]interface{}{
+				"partnerReferenceNo":       refNo,
+				"beneficiaryAccountNumber": "53602400026652",
+				"additionalInfo":           map[string]string{"beneficiaryBankCode": "116"},
+			}
+			b, _ := json.Marshal(body)
+			return b, refNo
+		}, strings.ReplaceAll(uuid.New().String(), "-", "")},
+		{"Test3: Numeric strings", func(extID string) ([]byte, string) {
+			refNo := fmt.Sprintf("%d", time.Now().UnixMilli())
+			body := map[string]interface{}{
+				"partnerReferenceNo":       refNo,
+				"beneficiaryAccountNumber": "53602400026652",
+				"additionalInfo":           map[string]string{"beneficiaryBankCode": "116"},
+			}
+			b, _ := json.Marshal(body)
+			return b, refNo
+		}, fmt.Sprintf("%d", time.Now().UnixMilli())},
+		{"Test4: Alpha only", func(extID string) ([]byte, string) {
+			refNo := randomAlpha(32)
+			body := map[string]interface{}{
+				"partnerReferenceNo":       refNo,
+				"beneficiaryAccountNumber": "53602400026652",
+				"additionalInfo":           map[string]string{"beneficiaryBankCode": "116"},
+			}
+			b, _ := json.Marshal(body)
+			return b, refNo
+		}, randomAlpha(10)},
+		{"Test5: With space in JSON key (like docs)", func(extID string) ([]byte, string) {
+			refNo := randomAlpha(32)
+			body := `{"partnerReferenceNo": "` + refNo + `", "beneficiaryAccountNumber" : "53602400026652", "additionalInfo": {"beneficiaryBankCode": "116"}}`
+			return []byte(body), refNo
+		}, fmt.Sprintf("%d", time.Now().UnixMilli())},
+		{"Test6: Different bank code 014", func(extID string) ([]byte, string) {
+			refNo := randomAlpha(32)
+			body := map[string]interface{}{
+				"partnerReferenceNo":       refNo,
+				"beneficiaryAccountNumber": "53602400026652",
+				"additionalInfo":           map[string]string{"beneficiaryBankCode": "014"},
+			}
+			b, _ := json.Marshal(body)
+			return b, refNo
+		}, fmt.Sprintf("%d", time.Now().UnixMilli())},
+		{"Test7: Account as int number", func(extID string) ([]byte, string) {
+			refNo := randomAlpha(32)
+			body := map[string]interface{}{
+				"partnerReferenceNo":       refNo,
+				"beneficiaryAccountNumber": 53602400026652,
+				"additionalInfo":           map[string]string{"beneficiaryBankCode": "116"},
+			}
+			b, _ := json.Marshal(body)
+			return b, refNo
+		}, fmt.Sprintf("%d", time.Now().UnixMilli())},
+		{"Test8: Minified body exact order", func(extID string) ([]byte, string) {
+			refNo := "ilFpX51e0CAttU2DW7dDWV7TCWqk1cE1wyJj"
+			body := `{"partnerReferenceNo":"` + refNo + `","beneficiaryAccountNumber":"53602400026652","additionalInfo":{"beneficiaryBankCode":"116"}}`
+			return []byte(body), refNo
+		}, "1155348175"},
+		{"Test9: Different field order", func(extID string) ([]byte, string) {
+			refNo := randomAlpha(32)
+			body := `{"additionalInfo":{"beneficiaryBankCode":"116"},"beneficiaryAccountNumber":"53602400026652","partnerReferenceNo":"` + refNo + `"}`
+			return []byte(body), refNo
+		}, fmt.Sprintf("%d", time.Now().UnixMilli())},
+		{"Test10: Short refNo", func(extID string) ([]byte, string) {
+			refNo := "test123"
+			body := map[string]interface{}{
+				"partnerReferenceNo":       refNo,
+				"beneficiaryAccountNumber": "53602400026652",
+				"additionalInfo":           map[string]string{"beneficiaryBankCode": "116"},
+			}
+			b, _ := json.Marshal(body)
+			return b, refNo
+		}, "12345"},
 	}
 
-	for _, tc := range tests {
+	fmt.Println("\n========== BANK INQUIRY TESTS ==========")
+	for _, tc := range bankTests {
+		bodyBytes, refNo := tc.bodyFunc(tc.externalID)
 		fmt.Printf("\n=== %s ===\n", tc.name)
-		fmt.Printf("PartnerRefNo: %s\n", tc.partnerRefNo)
+		fmt.Printf("PartnerRefNo: %s\n", refNo)
 		fmt.Printf("ExternalID: %s\n", tc.externalID)
-		fmt.Printf("AccountNumber: %s\n", tc.accountNumber)
-		fmt.Printf("BankCode: %s\n", tc.bankCode)
-		result := testBankInquiry(accessToken, tc.partnerRefNo, tc.externalID, tc.accountNumber, tc.bankCode)
+		fmt.Printf("Body: %s\n", string(bodyBytes))
+		result := testRequest(accessToken, "/snap/v1.0/emoney/bank-account-inquiry", bodyBytes, tc.externalID)
 		fmt.Printf("Result: %s\n", result)
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(300 * time.Millisecond)
+	}
+
+	// Test Ewallet Inquiry
+	fmt.Println("\n\n========== EWALLET INQUIRY TESTS ==========")
+	ewalletTests := []struct {
+		name       string
+		bodyFunc   func(externalID string) ([]byte, string)
+		externalID string
+	}{
+		{"Ewallet1: UUID v4", func(extID string) ([]byte, string) {
+			refNo := uuid.New().String()
+			body := map[string]interface{}{
+				"partnerReferenceNo": refNo,
+				"customerNumber":     "085165667472",
+				"additionalInfo":     map[string]string{"productCode": "DANA"},
+			}
+			b, _ := json.Marshal(body)
+			return b, refNo
+		}, uuid.New().String()},
+		{"Ewallet2: Numeric", func(extID string) ([]byte, string) {
+			refNo := fmt.Sprintf("%d", time.Now().UnixMilli())
+			body := map[string]interface{}{
+				"partnerReferenceNo": refNo,
+				"customerNumber":     "085165667472",
+				"additionalInfo":     map[string]string{"productCode": "DANA"},
+			}
+			b, _ := json.Marshal(body)
+			return b, refNo
+		}, fmt.Sprintf("%d", time.Now().UnixMilli())},
+		{"Ewallet3: Alpha only", func(extID string) ([]byte, string) {
+			refNo := randomAlpha(32)
+			body := map[string]interface{}{
+				"partnerReferenceNo": refNo,
+				"customerNumber":     "085165667472",
+				"additionalInfo":     map[string]string{"productCode": "DANA"},
+			}
+			b, _ := json.Marshal(body)
+			return b, refNo
+		}, randomAlpha(10)},
+	}
+
+	for _, tc := range ewalletTests {
+		bodyBytes, refNo := tc.bodyFunc(tc.externalID)
+		fmt.Printf("\n=== %s ===\n", tc.name)
+		fmt.Printf("PartnerRefNo: %s\n", refNo)
+		fmt.Printf("ExternalID: %s\n", tc.externalID)
+		fmt.Printf("Body: %s\n", string(bodyBytes))
+		result := testRequest(accessToken, "/snap/v1.0/emoney/account-inquiry", bodyBytes, tc.externalID)
+		fmt.Printf("Result: %s\n", result)
+		time.Sleep(300 * time.Millisecond)
 	}
 }
 
-func testBankInquiry(accessToken, partnerRefNo, externalID, accountNumber, bankCode string) string {
+func testRequest(accessToken, path string, body []byte, externalID string) string {
 	timestamp := timeNow()
-	bodyMap := map[string]interface{}{
-		"partnerReferenceNo":       partnerRefNo,
-		"beneficiaryAccountNumber": accountNumber,
-		"additionalInfo":           map[string]string{"beneficiaryBankCode": bankCode},
-	}
-	body, _ := json.Marshal(bodyMap)
-	path := "/snap/v1.0/emoney/bank-account-inquiry"
 	sig := createSymmetricSignature("POST", path, accessToken, body, timestamp)
-	fmt.Printf("Body: %s\n", string(body))
+
 	req, _ := http.NewRequest("POST", baseURL+path, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+accessToken)
@@ -120,6 +243,7 @@ func testBankInquiry(accessToken, partnerRefNo, externalID, accountNumber, bankC
 	req.Header.Set("X-EXTERNAL-ID", externalID)
 	req.Header.Set("CHANNEL-ID", channelID)
 	req.Header.Set("X-SIGNATURE", sig)
+
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {

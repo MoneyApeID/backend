@@ -668,7 +668,7 @@ func PakailinkBankTransfer(ctx context.Context, client *http.Client, accessToken
 		PartnerReferenceNo       string                 `json:"partnerReferenceNo"`
 		BeneficiaryAccountNumber string                 `json:"beneficiaryAccountNumber"`
 		BeneficiaryBankCode      string                 `json:"beneficiaryBankCode"`
-		SessionID                string                 `json:"sessionId"`
+		SessionID                string                 `json:"sessionId,omitempty"`
 		Amount                   transferAmount         `json:"amount"`
 		AdditionalInfo           transferAdditionalInfo `json:"additionalInfo"`
 	}
