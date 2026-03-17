@@ -117,18 +117,16 @@ func PakailinkTimestamp() string {
 }
 
 func generateExternalID() string {
-	ts := time.Now().UnixMilli()
-	return fmt.Sprintf("%d", ts)
+	return fmt.Sprintf("%d", time.Now().Unix()%10000000000)
 }
 
 func GeneratePartnerRefNo() string {
-	ts := time.Now().UnixMilli()
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	result := make([]byte, 28)
-	for i := 0; i < 28; i++ {
+	result := make([]byte, 32)
+	for i := 0; i < 32; i++ {
 		result[i] = charset[mathrand.Intn(len(charset))]
 	}
-	return fmt.Sprintf("%s%d", string(result), ts%10000)
+	return string(result)
 }
 
 func createAsymmetricSignature(stringToSign, privateKeyPath string) (string, error) {
