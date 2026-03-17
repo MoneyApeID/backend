@@ -648,7 +648,7 @@ type PakailinkBankTransferResponse struct {
 	} `json:"additionalInfo"`
 }
 
-func PakailinkBankTransfer(ctx context.Context, client *http.Client, accessToken, partnerRefNo, accountNumber, bankCode, sessionID string, amount float64, callbackURL string) (*PakailinkBankTransferResponse, error) {
+func PakailinkBankTransfer(ctx context.Context, client *http.Client, accessToken, partnerRefNo, accountNumber, bankCode string, amount float64, callbackURL string) (*PakailinkBankTransferResponse, error) {
 	cfg, err := getPakailinkConfig()
 	if err != nil {
 		return nil, err
@@ -657,19 +657,17 @@ func PakailinkBankTransfer(ctx context.Context, client *http.Client, accessToken
 	path := "/snap/v1.0/emoney/transfer-bank"
 	url := cfg.BaseURL + path
 
-	// Use map to preserve field order as per documentation
 	bodyObject := map[string]interface{}{
 		"partnerReferenceNo":       partnerRefNo,
 		"beneficiaryAccountNumber": accountNumber,
 		"beneficiaryBankCode":      bankCode,
-		"sessionId":                sessionID,
 		"amount": map[string]string{
 			"value":    fmt.Sprintf("%.2f", amount),
 			"currency": "IDR",
 		},
 		"additionalInfo": map[string]string{
 			"callbackUrl": callbackURL,
-			"remark":      "",
+			"remark":      "Penarikan Money Rich",
 		},
 	}
 
@@ -791,7 +789,7 @@ type PakailinkEwalletTopupResponse struct {
 	} `json:"additionalInfo"`
 }
 
-func PakailinkEwalletTopup(ctx context.Context, client *http.Client, accessToken, partnerRefNo, customerNumber, productCode, sessionID string, amount float64, callbackURL string) (*PakailinkEwalletTopupResponse, error) {
+func PakailinkEwalletTopup(ctx context.Context, client *http.Client, accessToken, partnerRefNo, customerNumber, productCode string, amount float64, callbackURL string) (*PakailinkEwalletTopupResponse, error) {
 	cfg, err := getPakailinkConfig()
 	if err != nil {
 		return nil, err
@@ -800,18 +798,17 @@ func PakailinkEwalletTopup(ctx context.Context, client *http.Client, accessToken
 	path := "/snap/v1.0/emoney/topup"
 	url := cfg.BaseURL + path
 
-	// Use map to preserve field order as per documentation
 	bodyObject := map[string]interface{}{
 		"partnerReferenceNo": partnerRefNo,
 		"customerNumber":     customerNumber,
 		"productCode":        productCode,
-		"sessionId":          sessionID,
 		"amount": map[string]string{
 			"value":    fmt.Sprintf("%.2f", amount),
 			"currency": "IDR",
 		},
 		"additionalInfo": map[string]string{
 			"callbackUrl": callbackURL,
+			"remark":      "Penarikan Money Rich",
 		},
 	}
 

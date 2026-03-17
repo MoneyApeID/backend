@@ -244,7 +244,7 @@ func ApproveWithdrawal(w http.ResponseWriter, r *http.Request) {
 	status := "Pending"
 
 	if destination.IsEwallet {
-		inquiryResp, err := utils.PakailinkEwalletInquiry(r.Context(), client, accessToken, withdrawal.OrderID, destination.AccountNumber, destination.PayoutCode)
+		_, err := utils.PakailinkEwalletInquiry(r.Context(), client, accessToken, withdrawal.OrderID, destination.AccountNumber, destination.PayoutCode)
 		if err != nil {
 			log.Printf("[Pakailink] Ewallet inquiry error for %s: %v", withdrawal.OrderID, err)
 			utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{
@@ -254,7 +254,7 @@ func ApproveWithdrawal(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		topupResp, err := utils.PakailinkEwalletTopup(r.Context(), client, accessToken, withdrawal.OrderID, destination.AccountNumber, destination.PayoutCode, inquiryResp.SessionID, withdrawal.FinalAmount, callbackURL)
+		topupResp, err := utils.PakailinkEwalletTopup(r.Context(), client, accessToken, withdrawal.OrderID, destination.AccountNumber, destination.PayoutCode, withdrawal.FinalAmount, callbackURL)
 		if err != nil {
 			log.Printf("[Pakailink] Ewallet topup error for %s: %v", withdrawal.OrderID, err)
 			utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{
@@ -268,7 +268,7 @@ func ApproveWithdrawal(w http.ResponseWriter, r *http.Request) {
 			status = "Success"
 		}
 	} else {
-		inquiryResp, err := utils.PakailinkBankInquiry(r.Context(), client, accessToken, withdrawal.OrderID, destination.AccountNumber, destination.PayoutCode)
+		_, err := utils.PakailinkBankInquiry(r.Context(), client, accessToken, withdrawal.OrderID, destination.AccountNumber, destination.PayoutCode)
 		if err != nil {
 			log.Printf("[Pakailink] Bank inquiry error for %s: %v", withdrawal.OrderID, err)
 			utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{
@@ -278,7 +278,7 @@ func ApproveWithdrawal(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		transferResp, err := utils.PakailinkBankTransfer(r.Context(), client, accessToken, withdrawal.OrderID, destination.AccountNumber, destination.PayoutCode, inquiryResp.SessionID, withdrawal.FinalAmount, callbackURL)
+		transferResp, err := utils.PakailinkBankTransfer(r.Context(), client, accessToken, withdrawal.OrderID, destination.AccountNumber, destination.PayoutCode, withdrawal.FinalAmount, callbackURL)
 		if err != nil {
 			log.Printf("[Pakailink] Bank transfer error for %s: %v", withdrawal.OrderID, err)
 			utils.WriteJSON(w, http.StatusBadRequest, utils.APIResponse{
@@ -470,8 +470,8 @@ func PakailinkPayoutCallbackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	switch statusCode {
-	case "00":
+	switch {
+	case utils.IsPakailinkSuccessStatus(statusCode):
 		if withdrawal.Status != "Success" {
 			if err := updateWithdrawalAndTransactionStatus(db, &withdrawal, "Success"); err != nil {
 				utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
@@ -481,9 +481,19 @@ func PakailinkPayoutCallbackHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-	case "06":
-		if withdrawal.Status != "Success" {
+	case utils.IsPakailinkPendingStatus(statusCode):
+		if withdrawal.Status != "Success" && withdrawal.Status != "Pending" {
 			if err := updateWithdrawalAndTransactionStatus(db, &withdrawal, "Pending"); err != nil {
+				utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
+					Success: false,
+					Message: "Gagal memperbarui status penarikan",
+				})
+				return
+			}
+		}
+	case utils.IsPakailinkFailedStatus(statusCode):
+		if withdrawal.Status != "Success" && withdrawal.Status != "Failed" {
+			if err := updateWithdrawalAndTransactionStatus(db, &withdrawal, "Failed"); err != nil {
 				utils.WriteJSON(w, http.StatusInternalServerError, utils.APIResponse{
 					Success: false,
 					Message: "Gagal memperbarui status penarikan",

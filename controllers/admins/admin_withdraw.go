@@ -165,7 +165,7 @@ func AdminWithdrawTransferHandler(w http.ResponseWriter, r *http.Request) {
 
 	if isEwallet {
 		// Ewallet topup via PakaiLink (sessionId is optional)
-		topupResp, err := utils.PakailinkEwalletTopup(r.Context(), client, accessToken, req.PartnerRefNo, req.AccountNumber, req.BankCode, "", req.Amount, "")
+		topupResp, err := utils.PakailinkEwalletTopup(r.Context(), client, accessToken, req.PartnerRefNo, req.AccountNumber, req.BankCode, req.Amount, "")
 		if err != nil {
 			log.Printf("[AdminWithdraw] EwalletTopup error: %v", err)
 			db.Model(&record).Update("status", "Failed")
@@ -178,7 +178,7 @@ func AdminWithdrawTransferHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		// Bank transfer via PakaiLink (sessionId is optional)
-		transferResp, err := utils.PakailinkBankTransfer(r.Context(), client, accessToken, req.PartnerRefNo, req.AccountNumber, req.BankCode, "", req.Amount, "")
+		transferResp, err := utils.PakailinkBankTransfer(r.Context(), client, accessToken, req.PartnerRefNo, req.AccountNumber, req.BankCode, req.Amount, "")
 		if err != nil {
 			log.Printf("[AdminWithdraw] BankTransfer error: %v", err)
 			db.Model(&record).Update("status", "Failed")
