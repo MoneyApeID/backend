@@ -656,35 +656,20 @@ func PakailinkBankTransfer(ctx context.Context, client *http.Client, accessToken
 
 	path := "/snap/v1.0/emoney/transfer-bank"
 	url := cfg.BaseURL + path
-	type transferAmount struct {
-		Value    string `json:"value"`
-		Currency string `json:"currency"`
-	}
-	type transferAdditionalInfo struct {
-		CallbackUrl string `json:"callbackUrl,omitempty"`
-		Remark      string `json:"remark"`
-	}
-	type transferPayload struct {
-		PartnerReferenceNo       string                 `json:"partnerReferenceNo"`
-		BeneficiaryAccountNumber string                 `json:"beneficiaryAccountNumber"`
-		BeneficiaryBankCode      string                 `json:"beneficiaryBankCode"`
-		SessionID                string                 `json:"sessionId,omitempty"`
-		Amount                   transferAmount         `json:"amount"`
-		AdditionalInfo           transferAdditionalInfo `json:"additionalInfo"`
-	}
 
-	bodyObject := transferPayload{
-		PartnerReferenceNo:       partnerRefNo,
-		BeneficiaryAccountNumber: accountNumber,
-		BeneficiaryBankCode:      bankCode,
-		SessionID:                sessionID,
-		Amount: transferAmount{
-			Value:    fmt.Sprintf("%.2f", amount),
-			Currency: "IDR",
+	// Use map to preserve field order as per documentation
+	bodyObject := map[string]interface{}{
+		"partnerReferenceNo":       partnerRefNo,
+		"beneficiaryAccountNumber": accountNumber,
+		"beneficiaryBankCode":      bankCode,
+		"sessionId":                sessionID,
+		"amount": map[string]string{
+			"value":    fmt.Sprintf("%.2f", amount),
+			"currency": "IDR",
 		},
-		AdditionalInfo: transferAdditionalInfo{
-			CallbackUrl: strings.TrimSpace(callbackURL),
-			Remark:      "",
+		"additionalInfo": map[string]string{
+			"callbackUrl": callbackURL,
+			"remark":      "",
 		},
 	}
 
@@ -814,23 +799,23 @@ func PakailinkEwalletTopup(ctx context.Context, client *http.Client, accessToken
 
 	path := "/snap/v1.0/emoney/topup"
 	url := cfg.BaseURL + path
-	additionalInfo := map[string]interface{}{}
-	if strings.TrimSpace(callbackURL) != "" {
-		additionalInfo["callbackUrl"] = callbackURL
-	}
+
+	// Use map to preserve field order as per documentation
 	bodyObject := map[string]interface{}{
 		"partnerReferenceNo": partnerRefNo,
 		"customerNumber":     customerNumber,
 		"productCode":        productCode,
-		"amount":             map[string]string{"value": fmt.Sprintf("%.2f", amount), "currency": "IDR"},
-		"additionalInfo":     additionalInfo,
-	}
-	if strings.TrimSpace(sessionID) != "" {
-		bodyObject["sessionId"] = sessionID
+		"sessionId":          sessionID,
+		"amount": map[string]string{
+			"value":    fmt.Sprintf("%.2f", amount),
+			"currency": "IDR",
+		},
+		"additionalInfo": map[string]string{
+			"callbackUrl": callbackURL,
+		},
 	}
 
 	body, _ := json.Marshal(bodyObject)
-	body = minifyJSON(body)
 	timestamp := PakailinkTimestamp()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
