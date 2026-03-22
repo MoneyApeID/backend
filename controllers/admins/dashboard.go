@@ -35,6 +35,13 @@ type TypeTransactions struct {
 	Bonus      *int64 `json:"bonus"`
 }
 
+type FinancialStats struct {
+	Total   float64 `json:"total"`
+	Success float64 `json:"success"`
+	Pending float64 `json:"pending"`
+	Failed  float64 `json:"failed"`
+}
+
 type DashboardStats struct {
 	TotalUsers          int64               `json:"total_users"`
 	ActiveUsers         int64               `json:"active_users"`
@@ -49,6 +56,8 @@ type DashboardStats struct {
 	PendingForums       int64               `json:"pending_forums"`
 	TypeTransactions    TypeTransactions    `json:"type_transactions"`
 	LastTransactions    []TransactionDetail `json:"last_transactions"`
+	DepositStats        FinancialStats      `json:"deposit_stats"`
+	WithdrawalStats     FinancialStats      `json:"withdrawal_stats"`
 }
 
 func GetDashboardStats(w http.ResponseWriter, r *http.Request) {
@@ -224,6 +233,84 @@ func GetDashboardStats(w http.ResponseWriter, r *http.Request) {
 				stats.LastTransactions = append(stats.LastTransactions, td)
 			}
 		}
+	}
+
+	// Get deposit statistics (Total, Success, Pending, Failed amounts)
+	type DepositResult struct {
+		Total   float64
+		Success float64
+		Pending float64
+		Failed  float64
+	}
+	var depositResult DepositResult
+
+	// Total deposit amount
+	db.Model(&models.Deposit{}).
+		Select("COALESCE(SUM(amount), 0) as total").
+		Scan(&depositResult.Total)
+
+	// Success deposit amount
+	db.Model(&models.Deposit{}).
+		Select("COALESCE(SUM(amount), 0) as success").
+		Where("status = ?", "Success").
+		Scan(&depositResult.Success)
+
+	// Pending deposit amount
+	db.Model(&models.Deposit{}).
+		Select("COALESCE(SUM(amount), 0) as pending").
+		Where("status = ?", "Pending").
+		Scan(&depositResult.Pending)
+
+	// Failed deposit amount (including Expired)
+	db.Model(&models.Deposit{}).
+		Select("COALESCE(SUM(amount), 0) as failed").
+		Where("status IN (?)", []string{"Failed", "Expired"}).
+		Scan(&depositResult.Failed)
+
+	stats.DepositStats = FinancialStats{
+		Total:   depositResult.Total,
+		Success: depositResult.Success,
+		Pending: depositResult.Pending,
+		Failed:  depositResult.Failed,
+	}
+
+	// Get withdrawal statistics (Total, Success, Pending, Failed amounts)
+	type WithdrawalResult struct {
+		Total   float64
+		Success float64
+		Pending float64
+		Failed  float64
+	}
+	var withdrawalResult WithdrawalResult
+
+	// Total withdrawal amount
+	db.Model(&models.Withdrawal{}).
+		Select("COALESCE(SUM(amount), 0) as total").
+		Scan(&withdrawalResult.Total)
+
+	// Success withdrawal amount
+	db.Model(&models.Withdrawal{}).
+		Select("COALESCE(SUM(amount), 0) as success").
+		Where("status = ?", "Success").
+		Scan(&withdrawalResult.Success)
+
+	// Pending withdrawal amount
+	db.Model(&models.Withdrawal{}).
+		Select("COALESCE(SUM(amount), 0) as pending").
+		Where("status = ?", "Pending").
+		Scan(&withdrawalResult.Pending)
+
+	// Failed withdrawal amount
+	db.Model(&models.Withdrawal{}).
+		Select("COALESCE(SUM(amount), 0) as failed").
+		Where("status = ?", "Failed").
+		Scan(&withdrawalResult.Failed)
+
+	stats.WithdrawalStats = FinancialStats{
+		Total:   withdrawalResult.Total,
+		Success: withdrawalResult.Success,
+		Pending: withdrawalResult.Pending,
+		Failed:  withdrawalResult.Failed,
 	}
 
 	// Send response
